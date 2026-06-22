@@ -58,7 +58,12 @@ def build_tree_options(org_units: pd.DataFrame, exclude_id: str | None = None):
 
     by_parent: dict = {}
     for _, row in org_units.iterrows():
-        by_parent.setdefault(row["parent_unit_id"], []).append(row)
+        # Coerce pandas NaN to Python None so root rows (null parent) group under
+        # the same key the walk() call uses.
+        pid = row["parent_unit_id"]
+        if pid != pid:  # NaN check (NaN != NaN is the only value true here)
+            pid = None
+        by_parent.setdefault(pid, []).append(row)
 
     excluded_ids: set = set()
     if exclude_id:

@@ -58,7 +58,12 @@ def build_org_tree(org_units: pd.DataFrame) -> list[tuple[str, str, int]]:
 
     by_parent: dict = {}
     for _, row in org_units.iterrows():
-        by_parent.setdefault(row["parent_unit_id"], []).append(row)
+        # Coerce pandas NaN to Python None so root rows (null parent) group under
+        # the same key the walk() call uses.
+        pid = row["parent_unit_id"]
+        if pid != pid:  # NaN check (NaN != NaN is the only value true here)
+            pid = None
+        by_parent.setdefault(pid, []).append(row)
 
     out: list[tuple[str, str, int]] = []
 

@@ -164,10 +164,13 @@ for _, o in objs_sorted.iterrows():
 obj_labels = [lbl for _, lbl in objective_options]
 obj_id_by_label = {lbl: oid for oid, lbl in objective_options}
 
-with st.sidebar:
-    st.header("Working on")
+# Objective picker lives inline at the top of the page, not in the sidebar —
+# the selection drives the whole page, so it needs to be impossible to miss.
+# Wide column so long objective labels don't get truncated.
+pc1, pc2 = st.columns([3, 1])
+with pc1:
     selected_label = st.selectbox(
-        "Objective",
+        "**Working on**",
         options=obj_labels,
         index=0,
         help="Pick the objective you want to plan in depth.",

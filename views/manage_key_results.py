@@ -88,7 +88,12 @@ def build_org_tree_position(org_units: pd.DataFrame) -> dict:
         return {}
     by_parent: dict = {}
     for _, row in org_units.iterrows():
-        by_parent.setdefault(row["parent_unit_id"], []).append(row)
+        # Coerce pandas NaN to Python None so root rows (null parent) group under
+        # the same key the walk() call uses.
+        pid = row["parent_unit_id"]
+        if pid != pid:  # NaN check (NaN != NaN is the only value true here)
+            pid = None
+        by_parent.setdefault(pid, []).append(row)
 
     position = {}
     counter = [0]
@@ -328,33 +333,67 @@ if key_results.empty:
     st.info("No KRs yet — add one above.")
     st.stop()
 
-# Sort: by org unit tree, then period, then objective, then KR title
-krs_with_context = key_results.copy()
-krs_with_context["__obj_ou"] = krs_with_context["objective_id"].map(
-    lambda oid: obj_by_id.get(oid, {}).get("org_unit_id")
-)
-krs_with_context["__pos"] = krs_with_context["__obj_ou"].map(tree_position).fillna(999)
-krs_with_context["__period_key"] = krs_with_context["objective_id"].map(
-    lambda oid: period_sort_key(obj_by_id.get(oid, {}).get("period", ""))
-)
-krs_with_context["__obj_title"] = krs_with_context["objective_id"].map(
-    lambda oid: obj_by_id.get(oid, {}).get("title", "")
-)
-krs_with_context = krs_with_context.sort_values(
-    ["__pos", "__period_key", "__obj_title", "title"]
-)
+# Build a parent → children map. Children appear immediately after their parent
+# in the rendered list, with indentation. Cross-org-unit parents are fine — the
+# cascade is the primary organizing principle here, not strict org-unit grouping.
+all_kr_ids = set(key_results["id"].tolist())
+children_by_parent: dict = {}
+for _, kr_row in key_results.iterrows():
+    parent_id = kr_row.get("parent_key_result_id")
+    # Treat as a root if parent is missing or points to a KR not in our data
+    # (defensive against orphans from direct DB deletes).
+    if parent_id and parent_id in all_kr_ids:
+        children_by_parent.setdefault(parent_id, []).append(kr_row)
+    else:
+        children_by_parent.setdefault(None, []).append(kr_row)
 
-for _, kr in krs_with_context.iterrows():
+
+def sibling_sort_key(kr_row):
+    """Order siblings by: org unit tree position, period, objective title, KR title."""
+    obj = obj_by_id.get(kr_row["objective_id"], {})
+    return (
+        tree_position.get(obj.get("org_unit_id"), 999),
+        period_sort_key(obj.get("period", "")),
+        obj.get("title", ""),
+        kr_row.get("title", ""),
+    )
+
+
+# Walk the tree, producing an ordered list of (kr_row, depth) pairs.
+ordered_krs: list[tuple] = []
+
+
+def walk_tree(parent_id, depth: int):
+    siblings = sorted(children_by_parent.get(parent_id, []), key=sibling_sort_key)
+    for child in siblings:
+        ordered_krs.append((child, depth))
+        walk_tree(child["id"], depth + 1)
+
+
+walk_tree(None, 0)
+
+
+for kr, depth in ordered_krs:
     obj = obj_by_id.get(kr["objective_id"], {})
     ou_name = ou_name_by_id.get(obj.get("org_unit_id"), "?")
     period = obj.get("period", "?")
 
     grade = kr_progress(kr.get("start_value"), kr.get("target_value"), kr.get("current_value"))
     parent_kr = kr_by_id.get(kr.get("parent_key_result_id"))
-    parent_note = f"  ·  ↑ rolls up to: *{parent_kr['title']}*" if parent_kr else ""
+
+    # Indent children visually. The "↳ " arrow per depth level reads as a tree
+    # branch. Streamlit collapses whitespace, so we use visible characters.
+    prefix = "↳ " * depth
+
+    # When indented, the parent is visually above — the "rolls up to" note
+    # becomes redundant. Keep it only for orphan-root KRs (depth 0 + has a
+    # parent_id pointing nowhere) so the dangling reference doesn't get hidden.
+    parent_note = ""
+    if depth == 0 and kr.get("parent_key_result_id") and not parent_kr:
+        parent_note = "  ·  ⚠ parent KR not found"
 
     header = (
-        f"{grade_color(grade)} **{ou_name}** · {period} — "
+        f"{prefix}{grade_color(grade)} **{ou_name}** · {period} — "
         f"{kr['title']} ({grade:.0%}){parent_note}"
     )
 

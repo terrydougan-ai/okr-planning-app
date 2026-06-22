@@ -78,7 +78,12 @@ def build_org_tree(org_units: pd.DataFrame):
 
     by_parent: dict = {}
     for _, row in org_units.iterrows():
-        by_parent.setdefault(row["parent_unit_id"], []).append(row)
+        # Coerce pandas NaN to Python None so root rows (null parent) group under
+        # the same key the walk() call uses.
+        pid = row["parent_unit_id"]
+        if pid != pid:  # NaN check (NaN != NaN is the only value true here)
+            pid = None
+        by_parent.setdefault(pid, []).append(row)
 
     out: list[tuple[str, str]] = []
 
@@ -209,12 +214,12 @@ else:
                 with ec2:
                     cur_ou_label = next(
                         (lbl for oid, lbl in tree if oid == strat["org_unit_id"]),
-                        tree_labels[0],
+                        tree_labels[0] if tree_labels else "",
                     )
                     es_ou_label = st.selectbox(
                         "Org unit",
                         options=tree_labels,
-                        index=tree_labels.index(cur_ou_label),
+                        index=tree_labels.index(cur_ou_label) if cur_ou_label in tree_labels else 0,
                     )
                 with ec3:
                     es_year = st.number_input(
@@ -411,12 +416,12 @@ for _, obj in objs_sorted.iterrows():
                 # Find current strategy in dropdown
                 cur_strat_label = next(
                     (lbl for sid, lbl, _ in strategy_options if sid == obj["strategy_id"]),
-                    strategy_labels[0],
+                    strategy_labels[0] if strategy_labels else "",
                 )
                 eo_strategy_label = st.selectbox(
                     "Strategy",
                     options=strategy_labels,
-                    index=strategy_labels.index(cur_strat_label),
+                    index=strategy_labels.index(cur_strat_label) if cur_strat_label in strategy_labels else 0,
                 )
 
             ec3, ec4, ec5 = st.columns([2, 2, 2])
