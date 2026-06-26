@@ -133,9 +133,14 @@ if objectives.empty:
 
 
 # -----------------------------------------------------------------------------
-# Sidebar filters
+# Page filters
 # -----------------------------------------------------------------------------
+# Pickers live in-page (not sidebar) for consistency with the rest of the app.
+# Both org and period offer "All …" options for the portfolio bird's-eye view
+# that's the whole point of Flow. Defaults come from session state so the
+# scope you picked on another page stays selected here.
 ou_name_by_id = org_units.set_index("id")["name"].to_dict()
+ou_id_by_name = {v: k for k, v in ou_name_by_id.items()}
 
 org_unit_options = ["All org units"]
 ou_sorted = org_units.copy()
@@ -151,10 +156,44 @@ periods_available = sorted(
 )
 period_options = ["All periods"] + list(periods_available)
 
-with st.sidebar:
-    st.header("Filters")
-    selected_ou = st.selectbox("Org unit", options=org_unit_options, index=0)
-    selected_period = st.selectbox("Period", options=period_options, index=0)
+# Read sticky scope as defaults. Flow uses display names not IDs, so we look
+# up the name from the saved org_id.
+_saved_org_id = st.session_state.get("scope_org_id")
+_default_org_label = "All org units"
+if _saved_org_id and _saved_org_id in ou_name_by_id:
+    _candidate_name = ou_name_by_id[_saved_org_id]
+    if _candidate_name in org_unit_options:
+        _default_org_label = _candidate_name
+_default_org_idx = org_unit_options.index(_default_org_label)
+
+_saved_period = st.session_state.get("scope_period")
+_default_period_idx = 0  # "All periods"
+if _saved_period and _saved_period in period_options:
+    _default_period_idx = period_options.index(_saved_period)
+
+fc1, fc2 = st.columns([2, 1])
+with fc1:
+    selected_ou = st.selectbox(
+        "**Org unit**",
+        options=org_unit_options,
+        index=_default_org_idx,
+        help="Pick a specific unit or 'All org units' for the company-wide view. Persists across pages.",
+    )
+with fc2:
+    selected_period = st.selectbox(
+        "**Period**",
+        options=period_options,
+        index=_default_period_idx,
+        help="Pick a quarter, a fiscal year, or all periods.",
+    )
+
+# Persist scope (only when a specific org / period is picked; 'All' stays local
+# to Flow so it doesn't blank out scope for other pages).
+if selected_ou != "All org units" and selected_ou in ou_id_by_name:
+    st.session_state["scope_org_id"] = ou_id_by_name[selected_ou]
+    st.session_state["scope_org_name"] = selected_ou
+if selected_period != "All periods":
+    st.session_state["scope_period"] = selected_period
 
 
 # -----------------------------------------------------------------------------
@@ -320,14 +359,20 @@ def add_node(kind: str, node_id: str, label: str, hover: str, is_orphan: bool = 
 
 ou_position = {row["id"]: i for i, (_, row) in enumerate(ou_sorted.iterrows())}
 
-# YEARLY objective nodes (column 1)
+# Track each node's position within its column. Downstream columns sort by
+# their parent's position so ribbons stay non-crossing where the topology
+# is mostly linear (barycentric sort — standard Sankey layout trick).
+position_in_column: dict = {}  # node_id (string uuid) → its index in its column
+
+# ---------- YEARLY column (column 1) ----------
+# Stable starting order: by org-tree position, then by period (within year)
 yearly_sorted = yearly_objs.copy()
 if not yearly_sorted.empty:
     yearly_sorted["__pos"] = yearly_sorted["org_unit_id"].map(ou_position).fillna(999)
     yearly_sorted["__period_key"] = yearly_sorted["period"].apply(period_sort_key)
     yearly_sorted = yearly_sorted.sort_values(["__pos", "__period_key"])
 
-    for _, yo in yearly_sorted.iterrows():
+    for i, (_, yo) in enumerate(yearly_sorted.iterrows()):
         is_orphan = yo["id"] in orphan_yearly_ids
         ou_name = ou_name_by_id.get(yo["org_unit_id"], "?")
         orphan_note = (
@@ -341,15 +386,28 @@ if not yearly_sorted.empty:
             f"{orphan_note}"
         )
         add_node("yearly_objective", yo["id"], yo["title"], hover, is_orphan=is_orphan)
+        position_in_column[yo["id"]] = i
 
-# QUARTERLY objective nodes (column 2)
+# ---------- QUARTERLY column (column 2) ----------
+# Sort by the parent yearly's position. Quarterlies without a yearly parent
+# (matrix or orphan-aligned) go to the bottom of the column, sorted by their
+# own org/period for stability.
 quarterly_sorted = quarterly_objs.copy()
 if not quarterly_sorted.empty:
-    quarterly_sorted["__pos"] = quarterly_sorted["org_unit_id"].map(ou_position).fillna(999)
-    quarterly_sorted["__period_key"] = quarterly_sorted["period"].apply(period_sort_key)
-    quarterly_sorted = quarterly_sorted.sort_values(["__pos", "__period_key"])
+    def _quarterly_sort_key(row):
+        parent_id = row.get("parent_objective_id")
+        if parent_id != parent_id:  # NaN
+            parent_id = None
+        parent_pos = position_in_column.get(parent_id, 999_999) if parent_id else 999_999
+        own_pos = ou_position.get(row["org_unit_id"], 999)
+        period_key = period_sort_key(row.get("period"))
+        # (parent's position, then by own org+period for ties / no-parent cases)
+        return (parent_pos, own_pos, period_key)
 
-    for _, qo in quarterly_sorted.iterrows():
+    quarterly_sorted["__sort_key"] = quarterly_sorted.apply(_quarterly_sort_key, axis=1)
+    quarterly_sorted = quarterly_sorted.sort_values("__sort_key")
+
+    for i, (_, qo) in enumerate(quarterly_sorted.iterrows()):
         is_orphan = qo["id"] in orphan_quarterly_ids
         ou_name = ou_name_by_id.get(qo["org_unit_id"], "?")
         orphan_note = (
@@ -362,9 +420,26 @@ if not quarterly_sorted.empty:
             f"{orphan_note}"
         )
         add_node("quarterly_objective", qo["id"], qo["title"], hover, is_orphan=is_orphan)
+        position_in_column[qo["id"]] = i
 
-# KR nodes (column 3)
-for _, kr in filtered_krs.iterrows():
+# ---------- KR column (column 3) ----------
+# Sort by the parent quarterly's position. Each KR has exactly one objective_id,
+# so the lookup is direct.
+if not filtered_krs.empty:
+    def _kr_sort_key(row):
+        parent_pos = position_in_column.get(row.get("objective_id"), 999_999)
+        return (parent_pos, safe_str_for_sort(row.get("title")))
+
+    def safe_str_for_sort(v):
+        return v if isinstance(v, str) else ""
+
+    krs_sorted = filtered_krs.copy()
+    krs_sorted["__sort_key"] = krs_sorted.apply(_kr_sort_key, axis=1)
+    krs_sorted = krs_sorted.sort_values("__sort_key")
+else:
+    krs_sorted = filtered_krs
+
+for i, (_, kr) in enumerate(krs_sorted.iterrows()):
     is_orphan = kr["id"] in orphan_kr_ids
     unit = kr.get("metric_unit") or ""
     orphan_note = (
@@ -379,9 +454,34 @@ for _, kr in filtered_krs.iterrows():
         f"{orphan_note}"
     )
     add_node("key_result", kr["id"], kr["title"], hover, is_orphan=is_orphan)
+    position_in_column[kr["id"]] = i
 
-# Initiative nodes (column 4)
-for _, init in filtered_inits.iterrows():
+# ---------- Initiative column (column 4) ----------
+# Sort by the AVERAGE position of the KRs each initiative links to. So a multi-
+# KR initiative sits between its KRs vertically, and single-KR initiatives sit
+# at their KR's row. This is the key fix for crossing ribbons.
+if not filtered_inits.empty:
+    # Build init_id → list of KR positions
+    init_avg_pos: dict = {}
+    if not filtered_links.empty:
+        for init_id, group in filtered_links.groupby("initiative_id"):
+            kr_positions = [
+                position_in_column.get(kid, 999_999)
+                for kid in group["key_result_id"].tolist()
+            ]
+            init_avg_pos[init_id] = (
+                sum(kr_positions) / len(kr_positions) if kr_positions else 999_999
+            )
+
+    inits_sorted = filtered_inits.copy()
+    inits_sorted["__sort_key"] = inits_sorted["id"].map(
+        lambda iid: init_avg_pos.get(iid, 999_999)
+    )
+    inits_sorted = inits_sorted.sort_values("__sort_key")
+else:
+    inits_sorted = filtered_inits
+
+for _, init in inits_sorted.iterrows():
     bc = bc_by_init.get(init["id"])
     v = (bc.get("predicted_value") if bc else None) or 0
     cost = (bc.get("predicted_cost") if bc else None) or 0
@@ -625,9 +725,10 @@ for kind, indices in indices_by_kind.items():
     if n == 1:
         nodes_y[indices[0]] = 0.5
         continue
-    # Spread evenly from 0.05 to 0.95 within the column
+    # Spread evenly from 0.03 to 0.97 (more headroom than 0.05/0.95 which
+    # leaves outer nodes bumping the chart edges).
     for pos, idx in enumerate(indices):
-        nodes_y[idx] = 0.05 + (0.90 * pos / (n - 1))
+        nodes_y[idx] = 0.03 + (0.94 * pos / (n - 1))
 
 # Build the Sankey
 fig = go.Figure(
@@ -675,8 +776,9 @@ column_node_counts = {
                  + len(orphan_kr_ids),
 }
 node_count_max = max(max(column_node_counts.values()), 1)
-# 90px per node (label + padding) plus 280px chrome (headers, margins, breathing room)
-chart_height = max(620, 90 * node_count_max + 280)
+# 110px per node (more breathing room than 90), plus 320px chrome (taller
+# top margin for the stacked title+subtitle headers, plus bottom padding).
+chart_height = max(640, 110 * node_count_max + 320)
 
 # Four column headers with subtitles, anchored at x = 0.00 / 0.33 / 0.67 / 1.00.
 # Title sits at y=1.07; subtitle at y=1.025 immediately below it, in muted gray.

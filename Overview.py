@@ -45,6 +45,11 @@ checkins = st.Page(
     title="Check-ins",
     icon="📈",
 )
+initiative_updates = st.Page(
+    "views/initiative_updates.py",
+    title="Initiative Updates",
+    icon="📊",
+)
 
 # View (read-only) pages
 overview = st.Page(
@@ -61,11 +66,6 @@ objectives = st.Page(
     "views/objectives.py",
     title="Objectives & KRs",
     icon="🧭",
-)
-initiatives = st.Page(
-    "views/initiatives.py",
-    title="Initiatives",
-    icon="🚀",
 )
 flow = st.Page(
     "views/flow.py",
@@ -84,6 +84,11 @@ manage_krs = st.Page(
     title="Key Results",
     icon="📊",
 )
+create_initiative = st.Page(
+    "views/create_initiative.py",
+    title="Create Initiative",
+    icon="🚀",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -92,10 +97,52 @@ manage_krs = st.Page(
 nav = st.navigation(
     {
         "Plan": [annual_strategy, plan_quarter],
-        "Track": [checkins],
-        "Views": [overview, summary, objectives, initiatives, flow],
-        "Manage": [manage_org, manage_krs],
+        "Track": [checkins, initiative_updates],
+        "Views": [overview, summary, objectives, flow],
+        "Manage": [manage_org, manage_krs, create_initiative],
     }
 )
+
+
+# ---------------------------------------------------------------------------
+# Sidebar scope indicator
+# ---------------------------------------------------------------------------
+# Shows the currently-active org/period scope so the user always knows what
+# the page-level filters are pinned to, even after navigating between pages.
+# Reads from session state keys 'scope_org_name' and 'scope_period' that the
+# individual pages keep up to date when their pickers change.
+with st.sidebar:
+    st.divider()
+    _scope_org = st.session_state.get("scope_org_name")
+    _scope_period = st.session_state.get("scope_period")
+    if _scope_org or _scope_period:
+        _parts = []
+        if _scope_org:
+            _parts.append(f"📍 {_scope_org}")
+        if _scope_period:
+            _parts.append(_scope_period)
+        st.caption("**Current scope**")
+        st.caption(" · ".join(_parts))
+        if st.button(
+            "↻ Reset scope",
+            use_container_width=True,
+            help=(
+                "Clear the remembered org unit and period. Each page will "
+                "fall back to its built-in default the next time you visit."
+            ),
+        ):
+            for _k in ("scope_org_id", "scope_org_name", "scope_period"):
+                st.session_state.pop(_k, None)
+            st.rerun()
+    else:
+        st.caption("📍 _No scope picked yet_")
+        st.markdown(
+            "<span style='color:#9CA3AF;font-size:0.8em'>"
+            "Pick an org unit and period on any page — they'll stay "
+            "selected as you navigate."
+            "</span>",
+            unsafe_allow_html=True,
+        )
+
 
 nav.run()

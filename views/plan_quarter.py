@@ -218,20 +218,33 @@ period_options = sorted(set(existing_quarterly) | set(default_quarters), key=per
 
 pc1, pc2 = st.columns([2, 1])
 with pc1:
+    # Default to sticky scope from session state if set
+    _saved_org_id = st.session_state.get("scope_org_id")
+    _default_org_idx = 0
+    if _saved_org_id:
+        for _i, _lbl in enumerate(tree_labels):
+            if tree_label_to_id.get(_lbl) == _saved_org_id:
+                _default_org_idx = _i
+                break
     selected_ou_label = st.selectbox(
         "**Working on**",
         options=tree_labels,
-        index=0,
+        index=_default_org_idx,
         help=(
             "Pick the org unit whose quarter you want to plan. "
-            "Indented entries (↳) sit under the unit above them."
+            "Indented entries (↳) sit under the unit above them. "
+            "Your selection persists across pages."
         ),
     )
 with pc2:
-    # Default to Q3-2026 if available, otherwise first option
-    default_period_idx = (
-        period_options.index("Q3-2026") if "Q3-2026" in period_options else 0
-    )
+    # Default to sticky period from session state, falling back to Q3-2026
+    _saved_period = st.session_state.get("scope_period")
+    if _saved_period and _saved_period in period_options:
+        default_period_idx = period_options.index(_saved_period)
+    elif "Q3-2026" in period_options:
+        default_period_idx = period_options.index("Q3-2026")
+    else:
+        default_period_idx = 0
     selected_period = st.selectbox(
         "**Period**", options=period_options, index=default_period_idx
     )
@@ -239,6 +252,11 @@ with pc2:
 selected_ou_id = tree_label_to_id[selected_ou_label]
 selected_ou_name = ou_name_by_id[selected_ou_id]
 selected_year = year_from_period(selected_period)
+
+# Persist current scope so other pages default to it
+st.session_state["scope_org_id"] = selected_ou_id
+st.session_state["scope_org_name"] = selected_ou_name
+st.session_state["scope_period"] = selected_period
 
 
 # -----------------------------------------------------------------------------
@@ -728,6 +746,108 @@ for group_key in ordered_group_keys:
                 if not key_results.empty
                 else pd.DataFrame()
             )
+
+            # --- Archive / Delete the quarterly objective -------------------
+            # Cascade scope: KRs of this objective + their init links.
+            _qo_kr_ids = set(obj_krs["id"]) if not obj_krs.empty else set()
+            _qo_links_count = (
+                len(links[links["key_result_id"].isin(_qo_kr_ids)])
+                if _qo_kr_ids and not links.empty else 0
+            )
+            # Defensive: check for any children pointing at this objective
+            # (rare for quarterlies, but the same FK constraint applies).
+            _qo_children = (
+                objectives[objectives["parent_objective_id"] == qobj["id"]]
+                if not objectives.empty else pd.DataFrame()
+            )
+            _qo_child_count = len(_qo_children)
+            _qo_blast = (
+                f"{len(obj_krs)} KR{'s' if len(obj_krs) != 1 else ''}, "
+                f"{_qo_links_count} initiative link{'s' if _qo_links_count != 1 else ''}"
+            )
+            if _qo_child_count > 0:
+                _qo_blast += (
+                    f"  ·  blocked by {_qo_child_count} child objective"
+                    f"{'s' if _qo_child_count != 1 else ''}"
+                )
+            _qo_archived = (qobj.get("status") == "archived")
+
+            qc_arch, qc_del, _ = st.columns([1.2, 1.2, 3])
+            with qc_arch:
+                _qo_arch_key = f"qo_arch_confirm_{qobj['id']}"
+                if st.session_state.get(_qo_arch_key):
+                    label = "✓ Unarchive" if _qo_archived else "✓ Archive"
+                    if st.button(label, key=f"qo_arch_do_{qobj['id']}", use_container_width=True):
+                        try:
+                            sb.table("objective").update(
+                                {"status": "active" if _qo_archived else "archived"}
+                            ).eq("id", qobj["id"]).execute()
+                            st.session_state.pop(_qo_arch_key, None)
+                            clear_cache()
+                            st.success(
+                                f"Quarterly objective {'unarchived' if _qo_archived else 'archived'}."
+                            )
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Failed: {e}")
+                else:
+                    if st.button(
+                        "📦 Unarchive" if _qo_archived else "📦 Archive",
+                        key=f"qo_arch_ask_{qobj['id']}",
+                        use_container_width=True,
+                    ):
+                        st.session_state[_qo_arch_key] = True
+                        st.rerun()
+
+            with qc_del:
+                _qo_del_key = f"qo_del_confirm_{qobj['id']}"
+                if _qo_child_count > 0:
+                    st.button(
+                        "🗑️ Delete (blocked)",
+                        key=f"qo_del_blocked_{qobj['id']}",
+                        use_container_width=True,
+                        disabled=True,
+                        help=(
+                            f"Can't delete — {_qo_child_count} objective(s) "
+                            "still align to this one. Re-parent them first, "
+                            "or archive this objective instead."
+                        ),
+                    )
+                elif st.session_state.get(_qo_del_key):
+                    if st.button(
+                        f"⚠ Really delete? Will lose {_qo_blast}",
+                        key=f"qo_del_do_{qobj['id']}",
+                        use_container_width=True,
+                        type="primary",
+                    ):
+                        try:
+                            sb.table("objective").delete().eq("id", qobj["id"]).execute()
+                            st.session_state.pop(_qo_del_key, None)
+                            clear_cache()
+                            st.success("Quarterly objective deleted.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Delete failed: {e}")
+                else:
+                    if st.button(
+                        "🗑️ Delete",
+                        key=f"qo_del_ask_{qobj['id']}",
+                        use_container_width=True,
+                        help=(
+                            "Hard delete — removes this objective, every KR "
+                            "under it, and all initiative→KR links. The "
+                            "initiatives themselves stay (might become orphans). "
+                            "Irreversible. Prefer Archive."
+                        ),
+                    ):
+                        st.session_state[_qo_del_key] = True
+                        st.rerun()
+
+            if st.session_state.get(_qo_arch_key) or st.session_state.get(_qo_del_key):
+                st.caption(
+                    f"⚠ Will affect: **{_qo_blast}**. Click the confirmation "
+                    "button to proceed, or anywhere else to cancel."
+                )
 
             # --- Add KR form ---
             with st.expander(

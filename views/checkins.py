@@ -229,16 +229,27 @@ period_options = sorted(
 
 pc1, pc2 = st.columns([2, 1])
 with pc1:
+    _saved_org_id = st.session_state.get("scope_org_id")
+    _default_org_idx = 0
+    if _saved_org_id:
+        for _i, _lbl in enumerate(tree_labels):
+            if tree_label_to_id.get(_lbl) == _saved_org_id:
+                _default_org_idx = _i
+                break
     selected_ou_label = st.selectbox(
         "**Working on**",
         options=tree_labels,
-        index=0,
-        help="Pick the org unit whose KRs you want to update.",
+        index=_default_org_idx,
+        help="Pick the org unit whose KRs you want to update. Persists across pages.",
     )
 with pc2:
-    default_period_idx = (
-        period_options.index("Q3-2026") if "Q3-2026" in period_options else 0
-    )
+    _saved_period = st.session_state.get("scope_period")
+    if _saved_period and _saved_period in period_options:
+        default_period_idx = period_options.index(_saved_period)
+    elif "Q3-2026" in period_options:
+        default_period_idx = period_options.index("Q3-2026")
+    else:
+        default_period_idx = 0
     selected_period = st.selectbox(
         "**Period**", options=period_options, index=default_period_idx
     )
@@ -246,6 +257,11 @@ with pc2:
 selected_ou_id = tree_label_to_id[selected_ou_label]
 selected_ou_name = ou_name_by_id[selected_ou_id]
 selected_year = year_from_period(selected_period)
+
+# Persist scope
+st.session_state["scope_org_id"] = selected_ou_id
+st.session_state["scope_org_name"] = selected_ou_name
+st.session_state["scope_period"] = selected_period
 
 
 # -----------------------------------------------------------------------------

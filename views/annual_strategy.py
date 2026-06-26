@@ -171,20 +171,48 @@ years_for_dropdown = sorted(known_years | {this_year, this_year + 1}, reverse=Tr
 
 pc1, pc2 = st.columns([2, 1])
 with pc1:
+    # Default to sticky scope org if set. Note tree_labels here has
+    # "All Organizations" at index 0, then the unit tree.
+    _saved_org_id = st.session_state.get("scope_org_id")
+    _default_org_idx = 0
+    if _saved_org_id:
+        for _i, _lbl in enumerate(tree_labels):
+            if tree_label_to_id.get(_lbl) == _saved_org_id:
+                _default_org_idx = _i
+                break
     selected_ou_label = st.selectbox(
         "**Working on**",
         options=tree_labels,
-        index=0,
+        index=_default_org_idx,
         help=(
             "Pick the org unit whose annual plan you want to set or review. "
             "Indented entries (↳) sit under the unit above them. "
-            "Pick 'All Organizations' to see every strategy across the company."
+            "Pick 'All Organizations' to see every strategy across the company. "
+            "Your selection persists across pages."
         ),
     )
 with pc2:
-    default_year_idx = (
-        years_for_dropdown.index(this_year) if this_year in years_for_dropdown else 0
-    )
+    # Derive default year from a sticky period if one's set, otherwise current year.
+    _saved_period = st.session_state.get("scope_period")
+    _saved_year = None
+    if isinstance(_saved_period, str):
+        # period_sort_key handles both 'FY2026' and 'Q3-2026' formats
+        if _saved_period.startswith("FY"):
+            try:
+                _saved_year = int(_saved_period[2:])
+            except ValueError:
+                _saved_year = None
+        else:
+            try:
+                _saved_year = int(_saved_period.split("-")[1])
+            except (ValueError, IndexError):
+                _saved_year = None
+    if _saved_year is not None and _saved_year in years_for_dropdown:
+        default_year_idx = years_for_dropdown.index(_saved_year)
+    elif this_year in years_for_dropdown:
+        default_year_idx = years_for_dropdown.index(this_year)
+    else:
+        default_year_idx = 0
     selected_year = st.selectbox(
         "**Fiscal year**",
         options=years_for_dropdown,
@@ -198,6 +226,12 @@ if selected_ou_label == ALL_ORGS_LABEL:
 else:
     selected_ou_id = tree_label_to_id[selected_ou_label]
     selected_ou_name = ou_name_by_id[selected_ou_id]
+
+# Persist scope (only org+name; year stays per-Annual since other pages think
+# in terms of period, not year, and writing back would muddle scope_period).
+if selected_ou_id is not None:
+    st.session_state["scope_org_id"] = selected_ou_id
+    st.session_state["scope_org_name"] = selected_ou_name
 
 
 # -----------------------------------------------------------------------------
@@ -412,10 +446,13 @@ for _, strat in ou_strategies_sorted.iterrows():
         else pd.DataFrame()
     )
 
+    _strat_status_now = strat.get("status") if isinstance(strat.get("status"), str) else "active"
+    _archived_suffix = "  ·  📦 archived" if _strat_status_now == "archived" else ""
     strat_header = (
         f"📜 **{strat['title']}** — "
         f"{len(strat_yearly_objs)} yearly objective"
         f"{'s' if len(strat_yearly_objs) != 1 else ''}"
+        f"{_archived_suffix}"
     )
 
     with st.expander(strat_header, expanded=False):
@@ -446,6 +483,122 @@ for _, strat in ou_strategies_sorted.iterrows():
                     except Exception as e:
                         st.error(f"Update failed: {e}")
         st.caption(f"Strategy ID: `{strat['id']}`")
+
+        # --- Archive / Delete (with blast-radius confirmation) -------------
+        # Both actions sit behind a two-click confirmation so a misclick
+        # doesn't vaporize a strategy and everything below it.
+        _strat_objs = (
+            objectives[objectives["strategy_id"] == strat["id"]]
+            if not objectives.empty else pd.DataFrame()
+        )
+        _strat_obj_ids = set(_strat_objs["id"]) if not _strat_objs.empty else set()
+        _strat_krs = (
+            key_results[key_results["objective_id"].isin(_strat_obj_ids)]
+            if _strat_obj_ids and not key_results.empty else pd.DataFrame()
+        )
+        # Also count quarterly objectives that align to any of this strategy's
+        # yearly objectives. If any exist, hard delete will fail (FK constraint
+        # on parent_objective_id has no cascade), so we refuse the delete and
+        # nudge the user to re-parent or archive.
+        _strat_yearly_ids = set(_strat_objs[_strat_objs["period"].astype(str).str.startswith("FY")]["id"]) if not _strat_objs.empty else set()
+        _strat_blocking_children = (
+            objectives[objectives["parent_objective_id"].isin(_strat_yearly_ids)]
+            if _strat_yearly_ids and not objectives.empty else pd.DataFrame()
+        )
+        _strat_blocking_count = len(_strat_blocking_children)
+        _blast = (
+            f"{len(_strat_objs)} objective{'s' if len(_strat_objs) != 1 else ''}, "
+            f"{len(_strat_krs)} KR{'s' if len(_strat_krs) != 1 else ''}"
+        )
+        if _strat_blocking_count > 0:
+            _blast += (
+                f"  ·  blocked by {_strat_blocking_count} child quarterly "
+                f"objective{'s' if _strat_blocking_count != 1 else ''}"
+            )
+        _strat_status = strat.get("status", "active") if isinstance(strat.get("status"), str) else "active"
+        _archived = (_strat_status == "archived")
+
+        ac_arch, ac_del, ac_spacer = st.columns([1.2, 1.2, 3])
+        with ac_arch:
+            _arch_confirm_key = f"strat_arch_confirm_{strat['id']}"
+            if st.session_state.get(_arch_confirm_key):
+                label = "✓ Unarchive" if _archived else f"✓ Archive ({_blast})"
+                if st.button(label, key=f"strat_arch_do_{strat['id']}", use_container_width=True):
+                    try:
+                        sb.table("strategy").update(
+                            {"status": "active" if _archived else "archived"}
+                        ).eq("id", strat["id"]).execute()
+                        st.session_state.pop(_arch_confirm_key, None)
+                        clear_cache()
+                        st.success(
+                            f"Strategy {'unarchived' if _archived else 'archived'}."
+                        )
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed: {e}")
+            else:
+                if st.button(
+                    "📦 Unarchive" if _archived else "📦 Archive",
+                    key=f"strat_arch_ask_{strat['id']}",
+                    use_container_width=True,
+                    help=(
+                        "Mark this strategy archived. Hidden from default views; "
+                        "data stays and can be unarchived later." if not _archived
+                        else "Bring this strategy back to active state."
+                    ),
+                ):
+                    st.session_state[_arch_confirm_key] = True
+                    st.rerun()
+
+        with ac_del:
+            _del_confirm_key = f"strat_del_confirm_{strat['id']}"
+            if _strat_blocking_count > 0:
+                st.button(
+                    "🗑️ Delete (blocked)",
+                    key=f"strat_del_blocked_{strat['id']}",
+                    use_container_width=True,
+                    disabled=True,
+                    help=(
+                        f"Can't delete — {_strat_blocking_count} quarterly "
+                        "objective(s) still align to this strategy's yearly "
+                        "objectives. Re-parent them on Plan a Quarter, or "
+                        "archive this strategy instead."
+                    ),
+                )
+            elif st.session_state.get(_del_confirm_key):
+                if st.button(
+                    f"⚠ Really delete? Will lose {_blast}",
+                    key=f"strat_del_do_{strat['id']}",
+                    use_container_width=True,
+                    type="primary",
+                ):
+                    try:
+                        sb.table("strategy").delete().eq("id", strat["id"]).execute()
+                        st.session_state.pop(_del_confirm_key, None)
+                        clear_cache()
+                        st.success("Strategy deleted (cascade complete).")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Delete failed: {e}")
+            else:
+                if st.button(
+                    "🗑️ Delete",
+                    key=f"strat_del_ask_{strat['id']}",
+                    use_container_width=True,
+                    help=(
+                        "Hard delete — removes this strategy AND every objective, "
+                        "KR, initiative link, and business case under it. "
+                        "Irreversible. Prefer Archive unless you're sure."
+                    ),
+                ):
+                    st.session_state[_del_confirm_key] = True
+                    st.rerun()
+
+        if st.session_state.get(_arch_confirm_key) or st.session_state.get(_del_confirm_key):
+            st.caption(
+                f"⚠ Will affect: **{_blast}**. Click the confirmation button to "
+                "proceed, or anywhere else to cancel."
+            )
 
         # --- Yearly objectives under THIS strategy --------------------------
         st.markdown("---")
@@ -587,6 +740,106 @@ for _, strat in ou_strategies_sorted.iterrows():
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Update failed: {e}")
+
+                # --- Archive / Delete the yearly objective ---------------
+                _yo_krs_local = obj_krs
+                # Count child quarterly objectives that align to this yearly.
+                # Postgres has no cascade on parent_objective_id (intentional —
+                # a parent's delete must not silently orphan children's links),
+                # so we refuse the delete if any children exist and explain why.
+                _yo_children = (
+                    objectives[objectives["parent_objective_id"] == obj["id"]]
+                    if not objectives.empty else pd.DataFrame()
+                )
+                _yo_child_count = len(_yo_children)
+                _yo_blast = (
+                    f"{len(_yo_krs_local)} KR"
+                    f"{'s' if len(_yo_krs_local) != 1 else ''}"
+                )
+                if _yo_child_count > 0:
+                    _yo_blast += (
+                        f"  ·  blocked by {_yo_child_count} child quarterly "
+                        f"objective{'s' if _yo_child_count != 1 else ''}"
+                    )
+                _yo_archived = (obj.get("status") == "archived")
+
+                yc_arch, yc_del, _ = st.columns([1.2, 1.2, 3])
+                with yc_arch:
+                    _yo_arch_key = f"yo_arch_confirm_{obj['id']}"
+                    if st.session_state.get(_yo_arch_key):
+                        label = "✓ Unarchive" if _yo_archived else f"✓ Archive"
+                        if st.button(label, key=f"yo_arch_do_{obj['id']}", use_container_width=True):
+                            try:
+                                sb.table("objective").update(
+                                    {"status": "active" if _yo_archived else "archived"}
+                                ).eq("id", obj["id"]).execute()
+                                st.session_state.pop(_yo_arch_key, None)
+                                clear_cache()
+                                st.success(
+                                    f"Yearly objective {'unarchived' if _yo_archived else 'archived'}."
+                                )
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed: {e}")
+                    else:
+                        if st.button(
+                            "📦 Unarchive" if _yo_archived else "📦 Archive",
+                            key=f"yo_arch_ask_{obj['id']}",
+                            use_container_width=True,
+                        ):
+                            st.session_state[_yo_arch_key] = True
+                            st.rerun()
+
+                with yc_del:
+                    _yo_del_key = f"yo_del_confirm_{obj['id']}"
+                    if _yo_child_count > 0:
+                        # Can't delete — children would dangle. Show a disabled
+                        # button and a clear next-step message.
+                        st.button(
+                            "🗑️ Delete (blocked)",
+                            key=f"yo_del_blocked_{obj['id']}",
+                            use_container_width=True,
+                            disabled=True,
+                            help=(
+                                f"Can't delete — {_yo_child_count} quarterly "
+                                "objective(s) still align to this yearly. "
+                                "Re-parent them first on Plan a Quarter, or "
+                                "archive this yearly instead."
+                            ),
+                        )
+                    elif st.session_state.get(_yo_del_key):
+                        if st.button(
+                            f"⚠ Really delete? Will lose {_yo_blast}",
+                            key=f"yo_del_do_{obj['id']}",
+                            use_container_width=True,
+                            type="primary",
+                        ):
+                            try:
+                                sb.table("objective").delete().eq("id", obj["id"]).execute()
+                                st.session_state.pop(_yo_del_key, None)
+                                clear_cache()
+                                st.success("Yearly objective deleted.")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Delete failed: {e}")
+                    else:
+                        if st.button(
+                            "🗑️ Delete",
+                            key=f"yo_del_ask_{obj['id']}",
+                            use_container_width=True,
+                            help=(
+                                "Hard delete — removes this objective and every "
+                                "KR under it. Irreversible. Prefer Archive."
+                            ),
+                        ):
+                            st.session_state[_yo_del_key] = True
+                            st.rerun()
+
+                if st.session_state.get(_yo_arch_key) or st.session_state.get(_yo_del_key):
+                    st.caption(
+                        f"⚠ Will affect: **{_yo_blast}**. Click the confirmation "
+                        "button to proceed, or anywhere else to cancel."
+                    )
 
                 # KRs under this objective
                 st.markdown("**Aspirational Key Results**")
