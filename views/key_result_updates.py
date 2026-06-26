@@ -1,32 +1,25 @@
 """
-Check-ins — a lightweight surface for updating KR current values.
+Key Result Updates — execution reporting surface for KRs (weekly cadence).
 
-Different from Plan a Quarter:
-  * That page is for PLANNING — titles, targets, parent objectives, initiatives,
-    business cases. Lots of structural editing.
-  * This page is for EXECUTION — weekly update of "where are we now?" on each
-    KR. Only the current_value and an optional note are editable. Title,
-    target, unit, parent objective, owner — all locked.
-
-Why a separate page: mature OKR systems (Lattice, Workboard, Gtmhub) all have
-a dedicated check-in surface for a reason. It keeps the cadence quick, the
-form narrow, and prevents accidental drift of structural fields during a
-weekly status update.
+Owns the weekly "where are we now?" check-in:
+  * Current value (the metric being tracked)
+  * Optional note explaining context for execs and history
+  * Implicit time series: a check_in row is inserted whenever value moves
+    OR when a non-empty note is provided
 
 Scope:
   Pick an org unit + a period. The page shows both the QUARTERLY KRs (tracked
-  weekly) and the YEARLY aspirational KRs for the same fiscal year (typically
-  updated quarterly during reviews). Both horizons in one check-in surface.
+  weekly) AND the YEARLY aspirational KRs for the same fiscal year (typically
+  updated quarterly during reviews). Both horizons in one surface.
 
-History:
-  Saving a check-in with a non-empty note also inserts a row in `check_in`
-  for time-series history. Saving with no note only updates the KR's
-  current_value (no history entry). Each row has a small "▸ history (N)"
-  disclosure showing the last 5 check-ins for that KR.
+Layout:
+  Each KR is its own bordered box, always visible (no expand-to-edit). Quarterly
+  KRs group under their parent Quarterly Objective so the team scans by goal,
+  not by abstract list. Yearly aspirational KRs get their own bottom section.
 
 Save behavior:
-  All edits are tracked in session state. One "Save all changes" button at the
-  bottom commits everything. Discard reverts.
+  All edits batch into session state. One 'Save all changes' button at the
+  bottom commits everything; Discard reverts.
 """
 
 import streamlit as st
@@ -50,8 +43,6 @@ sb = get_supabase()
 # -----------------------------------------------------------------------------
 @st.cache_data(ttl=60)
 def load_all():
-    # check_in table is new; tolerate its absence so the page still works
-    # before the migration is applied.
     try:
         check_ins_df = pd.DataFrame(
             sb.table("check_in")
@@ -67,6 +58,11 @@ def load_all():
         "objectives": pd.DataFrame(sb.table("objective").select("*").execute().data),
         "key_results": pd.DataFrame(sb.table("key_result").select("*").execute().data),
         "check_ins": check_ins_df,
+        # Initiatives + links loaded for the "linked initiatives" reference
+        # panel on each KR box (read-only — visible context for the
+        # team while writing check-in notes).
+        "initiatives": pd.DataFrame(sb.table("initiative").select("*").execute().data),
+        "links": pd.DataFrame(sb.table("initiative_key_result").select("*").execute().data),
     }
 
 
@@ -126,17 +122,12 @@ def grade_color(g: float) -> str:
 
 
 def safe_str(v) -> str:
-    """Return a str safely, treating pandas NaN as empty."""
-    if isinstance(v, str):
-        return v
-    return ""
+    return v if isinstance(v, str) else ""
 
 
 def fmt_date(ts) -> str:
-    """Format a timestamp as 'Nov 12'."""
     try:
-        dt = pd.to_datetime(ts)
-        return dt.strftime("%b %d")
+        return pd.to_datetime(ts).strftime("%b %d")
     except Exception:
         return "?"
 
@@ -144,12 +135,12 @@ def fmt_date(ts) -> str:
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
-st.title("📈 Check-ins")
+st.title("📈 Key Result Updates")
 st.caption(
-    "Update current values and add a note on each KR. Pick an org unit and "
-    "period — the page shows quarterly KRs *and* yearly aspirational KRs for "
-    "the same fiscal year. Only current values and notes are editable; "
-    "everything else is locked."
+    "Update current values and add context notes for KRs. Quarterly KRs are "
+    "tracked weekly; yearly aspirational KRs typically quarterly. Only "
+    "current values and notes are editable here — structural fields "
+    "(title, target, owner) live on **Plan a Quarter** or **Annual Strategy**."
 )
 
 try:
@@ -162,9 +153,26 @@ org_units = data["org_units"]
 objectives = data["objectives"]
 key_results = data["key_results"]
 check_ins = data["check_ins"]
+initiatives_df = data["initiatives"]
+links_df = data["links"]
+
+# Lookup for initiative title/owner/status by id
+init_by_id = (
+    initiatives_df.set_index("id").to_dict("index")
+    if not initiatives_df.empty else {}
+)
+
+
+# Exec health emoji (mirrors Initiative Updates page convention)
+EXEC_RAG_ICONS = {
+    "on_track":  "🟢",
+    "at_risk":   "🟡",
+    "off_track": "🔴",
+    "blocked":   "🚧",
+}
 
 if org_units.empty:
-    st.warning("No org units yet. Add at least one on **Manage → Org Units** first.")
+    st.warning("No org units yet.")
     st.stop()
 
 if key_results.empty:
@@ -176,7 +184,7 @@ if key_results.empty:
 
 
 # -----------------------------------------------------------------------------
-# Pickers: org unit (tree) + period (quarterly)
+# Pickers: org unit (tree) + period (quarterly) + owner
 # -----------------------------------------------------------------------------
 ou_name_by_id = org_units.set_index("id")["name"].to_dict()
 
@@ -185,7 +193,6 @@ level_order = {"company": 0, "segment": 1, "team": 2}
 ou_sorted["__order"] = ou_sorted["level"].map(level_order).fillna(99)
 ou_sorted = ou_sorted.sort_values(["__order", "name"])
 
-# Build indented tree labels
 children_by_parent: dict = {}
 for _, row in org_units.iterrows():
     pid = row["parent_unit_id"]
@@ -212,7 +219,6 @@ def _walk_org_tree(parent_id, depth: int):
 
 _walk_org_tree(None, 0)
 
-# Quarterly periods derived from data + sensible defaults
 existing_quarterly = (
     [p for p in objectives["period"].dropna().unique() if not str(p).startswith("FY")]
     if not objectives.empty
@@ -227,8 +233,20 @@ period_options = sorted(
     set(existing_quarterly) | set(default_quarters), key=period_sort_key
 )
 
-pc1, pc2 = st.columns([2, 1])
+# Owner picker — pulled from key_results.owner field
+owner_values = sorted(
+    {
+        o for o in key_results["owner"].dropna().tolist()
+        if isinstance(o, str) and o.strip()
+    }
+)
+ALL_OWNERS_LABEL = "All owners"
+NO_OWNER_LABEL = "— No owner set"
+owner_options = [ALL_OWNERS_LABEL] + owner_values + [NO_OWNER_LABEL]
+
+pc1, pc2, pc3 = st.columns([2, 1, 1])
 with pc1:
+    # Sticky-scope default
     _saved_org_id = st.session_state.get("scope_org_id")
     _default_org_idx = 0
     if _saved_org_id:
@@ -253,19 +271,28 @@ with pc2:
     selected_period = st.selectbox(
         "**Period**", options=period_options, index=default_period_idx
     )
+with pc3:
+    selected_owner = st.selectbox(
+        "**Owner**",
+        options=owner_options,
+        index=0,
+        help=(
+            "Filter to KRs owned by a specific person, or pick "
+            f"'{NO_OWNER_LABEL}' to surface KRs missing an owner."
+        ),
+    )
 
 selected_ou_id = tree_label_to_id[selected_ou_label]
 selected_ou_name = ou_name_by_id[selected_ou_id]
 selected_year = year_from_period(selected_period)
 
-# Persist scope
 st.session_state["scope_org_id"] = selected_ou_id
 st.session_state["scope_org_name"] = selected_ou_name
 st.session_state["scope_period"] = selected_period
 
 
 # -----------------------------------------------------------------------------
-# Find KRs in scope
+# Find KRs in scope, then apply owner filter
 # -----------------------------------------------------------------------------
 quarterly_objs = (
     objectives[
@@ -299,11 +326,23 @@ yearly_krs = (
 )
 
 
+def apply_owner_filter(df):
+    if df.empty:
+        return df
+    if selected_owner == ALL_OWNERS_LABEL:
+        return df
+    if selected_owner == NO_OWNER_LABEL:
+        return df[df["owner"].isna() | (df["owner"].fillna("").str.strip() == "")]
+    return df[df["owner"] == selected_owner]
+
+
+quarterly_krs = apply_owner_filter(quarterly_krs)
+yearly_krs = apply_owner_filter(yearly_krs)
+
+
 # -----------------------------------------------------------------------------
-# Session state for pending edits
+# Session state for pending edits — keyed per (org_unit, period)
 # -----------------------------------------------------------------------------
-# Keyed per (org_unit, period). Stores pending value AND note edits per KR.
-# Structure: { kr_id: { "value": float, "note": str } }
 scope_key = f"{selected_ou_id}::{selected_period}"
 pending_state_key = f"checkin_pending::{scope_key}"
 if pending_state_key not in st.session_state:
@@ -313,19 +352,18 @@ pending: dict = st.session_state[pending_state_key]
 
 
 def _kr_check_in_history(kr_id, limit: int = 5):
-    """Return the last N check-ins for a KR, most recent first."""
     if check_ins.empty:
         return pd.DataFrame()
     rows = check_ins[check_ins["key_result_id"] == kr_id]
     if rows.empty:
         return rows
-    # Sort defensively (load_all already orders desc, but session state may shift it)
     return rows.sort_values("created_at", ascending=False).head(limit)
 
 
-def _render_kr_row(kr, obj_title: str):
-    """Render one KR as a check-in row with editable current value + note,
-    plus a 'history' disclosure for prior check-ins."""
+def render_kr_box(kr):
+    """Render one KR as a bordered box with editable current value + note +
+    history disclosure. Same fields as before, just in a always-visible box
+    instead of needing to expand."""
     kr_id = kr["id"]
     unit = kr.get("metric_unit") or ""
     start = kr.get("start_value")
@@ -344,99 +382,146 @@ def _render_kr_row(kr, obj_title: str):
         if is_pending else ""
     )
 
-    # Header row: dot · title · owner · start → current → target
-    h1, h2, h_owner, h3, h4, h5 = st.columns([0.4, 3.4, 1.0, 1.0, 1.3, 1.3])
-    with h1:
+    with st.container(border=True):
+        # Indicator emoji (🎯 lagging / 📡 leading) shown right after the
+        # progress dot — same convention as Plan a Quarter / Annual.
+        _ind_type = kr.get("indicator_type")
+        indicator_prefix = ""
+        if _ind_type == "lagging":
+            indicator_prefix = "🎯 "
+        elif _ind_type == "leading":
+            indicator_prefix = "📡 "
+        # Title row
         st.markdown(
-            f"<div style='padding-top:26px;font-size:1.1em'>{grade_color(grade)}</div>",
-            unsafe_allow_html=True,
-        )
-    with h2:
-        st.markdown(
-            f"**{kr['title']}**{edited_marker}<br>"
-            f"<span style='color:#6B7280;font-size:0.85em'>"
-            f"under: {obj_title}"
-            f"</span>",
-            unsafe_allow_html=True,
-        )
-    with h_owner:
-        # Owner column — subdued label, owner name in normal weight so it
-        # reads alongside the values without competing with the KR title.
-        st.markdown(
-            f"<div style='padding-top:18px;color:#6B7280;font-size:0.85em'>Owner</div>"
-            f"<div style='font-size:0.95em'>{owner_str}</div>",
-            unsafe_allow_html=True,
-        )
-    with h3:
-        st.markdown(
-            f"<div style='padding-top:26px;color:#6B7280;font-size:0.9em'>"
-            f"Start: <b>{start} {unit}</b></div>",
-            unsafe_allow_html=True,
-        )
-    with h4:
-        new_value = st.number_input(
-            f"Current ({unit})" if unit else "Current",
-            value=float(display_current or 0),
-            step=1.0,
-            format="%.2f",
-            key=f"current_{kr_id}_{scope_key}",
-            label_visibility="visible",
-        )
-    with h5:
-        st.markdown(
-            f"<div style='padding-top:26px;color:#6B7280;font-size:0.9em'>"
-            f"Target: <b>{target} {unit}</b><br>"
-            f"<span style='color:#9CA3AF'>{grade:.0%} to goal</span></div>",
+            f"{grade_color(grade)} {indicator_prefix}&nbsp; **{kr['title']}**{edited_marker}",
             unsafe_allow_html=True,
         )
 
-    # Note input — full width below the row
-    note_value = st.text_input(
-        "Note for this check-in (optional)",
-        value=display_note,
-        key=f"note_{kr_id}_{scope_key}",
-        placeholder=(
-            "Why is this where it is? Any context for the exec review? "
-            "(Saved to history when you save.)"
-        ),
-    )
+        # 4-column row: Owner · Start · Current (editable) · Target
+        h_owner, h_start, h_cur, h_tgt = st.columns([1.2, 1, 1.3, 1.3])
+        with h_owner:
+            st.markdown(
+                f"<div style='color:#6B7280;font-size:0.85em'>Owner</div>"
+                f"<div style='font-size:0.95em'>{owner_str}</div>",
+                unsafe_allow_html=True,
+            )
+        with h_start:
+            st.markdown(
+                f"<div style='color:#6B7280;font-size:0.85em'>Start</div>"
+                f"<div style='font-size:0.95em'><b>{start} {unit}</b></div>",
+                unsafe_allow_html=True,
+            )
+        with h_cur:
+            new_value = st.number_input(
+                f"Current ({unit})" if unit else "Current",
+                value=float(display_current or 0),
+                step=1.0,
+                format="%.2f",
+                key=f"current_{kr_id}_{scope_key}",
+                label_visibility="visible",
+            )
+        with h_tgt:
+            st.markdown(
+                f"<div style='color:#6B7280;font-size:0.85em'>Target</div>"
+                f"<div style='font-size:0.95em'><b>{target} {unit}</b><br>"
+                f"<span style='color:#9CA3AF'>{grade:.0%} to goal</span></div>",
+                unsafe_allow_html=True,
+            )
 
-    # Track pending state
-    value_changed = new_value != (stored_current or 0)
-    note_changed = bool(note_value.strip())
-    if value_changed or note_changed:
-        pending[kr_id] = {
-            "value": new_value,
-            "note": note_value.strip(),
-            # Keep a flag so the save loop knows whether to write a check_in row
-            "value_changed": value_changed,
-            "note_changed": note_changed,
-        }
-    elif kr_id in pending:
-        del pending[kr_id]
+        # Note row
+        note_value = st.text_input(
+            "Note for this check-in (optional)",
+            value=display_note,
+            key=f"note_{kr_id}_{scope_key}",
+            placeholder=(
+                "Why is this where it is? Any context for exec review? "
+                "(Saved to history when you save.)"
+            ),
+        )
 
-    # History disclosure — collapsed by default
-    history_df = _kr_check_in_history(kr_id, limit=5)
-    history_count = len(history_df)
-    if history_count > 0:
-        with st.expander(f"▸ history ({history_count})", expanded=False):
-            for _, row in history_df.iterrows():
-                date_str = fmt_date(row.get("created_at"))
-                value = row.get("value")
-                note = safe_str(row.get("note")).strip()
-                note_part = f' · _"{note}"_' if note else " · _(no note)_"
-                st.markdown(
-                    f"<span style='color:#6B7280;font-size:0.9em'>"
-                    f"<b>{date_str}</b> · {value} {unit}{note_part}"
-                    f"</span>",
-                    unsafe_allow_html=True,
+        # Track pending state
+        value_changed = new_value != (stored_current or 0)
+        note_changed = bool(note_value.strip())
+        if value_changed or note_changed:
+            pending[kr_id] = {
+                "value": new_value,
+                "note": note_value.strip(),
+                "value_changed": value_changed,
+                "note_changed": note_changed,
+            }
+        elif kr_id in pending:
+            del pending[kr_id]
+
+        # History disclosure (collapsed by default)
+        history_df = _kr_check_in_history(kr_id, limit=5)
+        if len(history_df) > 0:
+            with st.expander(f"▸ history ({len(history_df)})", expanded=False):
+                for _, row in history_df.iterrows():
+                    date_str = fmt_date(row.get("created_at"))
+                    value = row.get("value")
+                    note = safe_str(row.get("note")).strip()
+                    note_part = f' · _"{note}"_' if note else " · _(no note)_"
+                    st.markdown(
+                        f"<span style='color:#6B7280;font-size:0.9em'>"
+                        f"<b>{date_str}</b> · {value} {unit}{note_part}"
+                        f"</span>",
+                        unsafe_allow_html=True,
+                    )
+
+        # Linked initiatives reference panel — read-only context for the
+        # team while writing check-in notes. KR Updates is for *direct
+        # measurement* of where the KR is now (the world moves it regardless
+        # of any one initiative). But seeing which initiatives are aimed
+        # at this KR helps the team write a more informed note when the
+        # value moves — "did our onboarding redesign land? is the marketing
+        # tailwind real?" Actual_kr_impact attribution lives elsewhere
+        # (Initiative Updates) where each link's measurement is captured.
+        kr_init_links = (
+            links_df[links_df["key_result_id"] == kr_id]
+            if not links_df.empty else pd.DataFrame()
+        )
+        link_count = len(kr_init_links)
+        if link_count > 0:
+            with st.expander(f"▸ linked initiatives ({link_count})", expanded=False):
+                # Table format mirrors the Objectives & KRs page so the
+                # two surfaces speak the same vocabulary. Same columns,
+                # same column order — only difference is this one's
+                # nested inside a disclosure and read-only.
+                rows = []
+                for _, lk in kr_init_links.iterrows():
+                    init = init_by_id.get(lk["initiative_id"], {})
+                    owner_val = init.get("owner")
+                    exec_rag = init.get("exec_rag")
+                    exec_icon = (
+                        EXEC_RAG_ICONS.get(exec_rag, "—")
+                        if isinstance(exec_rag, str) else "—"
+                    )
+                    rows.append({
+                        "initiative": init.get("title", "?"),
+                        "owner": (
+                            owner_val
+                            if isinstance(owner_val, str) and owner_val.strip()
+                            else "—"
+                        ),
+                        "status": init.get("status", ""),
+                        "exec health": exec_icon,
+                        "delivery %": init.get("progress_pct", 0),
+                        "predicted impact": lk.get("predicted_kr_impact"),
+                        "actual impact": lk.get("actual_kr_impact"),
+                    })
+                st.dataframe(
+                    pd.DataFrame(rows),
+                    use_container_width=True,
+                    hide_index=True,
                 )
-
-    st.divider()
+                st.caption(
+                    "_Attribution of actual impact happens on **Initiative "
+                    "Updates** — not here._"
+                )
 
 
 # -----------------------------------------------------------------------------
-# Render: Quarterly KRs section
+# Render: Quarterly KRs section — grouped by parent Quarterly Objective
 # -----------------------------------------------------------------------------
 obj_title_by_id = (
     objectives.set_index("id")["title"].to_dict() if not objectives.empty else {}
@@ -447,55 +532,65 @@ st.subheader(
     f"Quarterly Key Results — {selected_period} "
     f"({len(quarterly_krs)})"
 )
-st.caption("Updated weekly. These are the outcomes being moved by this quarter's bets.")
+st.caption("Updated weekly. Grouped by parent quarterly objective.")
 
 if quarterly_krs.empty:
     st.info(
-        f"No quarterly KRs for **{selected_ou_name}** in {selected_period}. "
-        "Add KRs to quarterly objectives on the **Plan a Quarter** page."
+        f"No quarterly KRs match in **{selected_ou_name}** for {selected_period} "
+        f"(owner filter: {selected_owner})."
     )
 else:
-    quarterly_krs_sorted = quarterly_krs.copy()
-    quarterly_krs_sorted["__obj_title"] = quarterly_krs_sorted["objective_id"].map(
-        obj_title_by_id
+    # Group quarterly KRs by their parent objective
+    quarterly_krs_by_obj: dict = {}
+    for _, kr in quarterly_krs.iterrows():
+        obj_id = kr.get("objective_id")
+        quarterly_krs_by_obj.setdefault(obj_id, []).append(kr)
+
+    # Order objectives by title for predictability
+    ordered_obj_ids = sorted(
+        quarterly_krs_by_obj.keys(),
+        key=lambda oid: safe_str(obj_title_by_id.get(oid)).lower(),
     )
-    quarterly_krs_sorted = quarterly_krs_sorted.sort_values(["__obj_title", "title"])
-    for _, kr in quarterly_krs_sorted.iterrows():
-        obj_title = obj_title_by_id.get(kr["objective_id"], "?")
-        _render_kr_row(kr, obj_title)
+
+    for obj_id in ordered_obj_ids:
+        obj_title = obj_title_by_id.get(obj_id, "?")
+        krs_for_obj = sorted(
+            quarterly_krs_by_obj[obj_id],
+            key=lambda k: safe_str(k.get("title")).lower(),
+        )
+        st.markdown(f"##### 🎯 {obj_title}")
+        for kr in krs_for_obj:
+            render_kr_box(kr)
+        st.write("")  # small gap between objectives
 
 
 # -----------------------------------------------------------------------------
-# Render: Yearly KRs section
+# Render: Yearly Aspirational KRs section (flat — usually fewer)
 # -----------------------------------------------------------------------------
+st.divider()
 st.subheader(
     f"Yearly Aspirational Key Results — FY{selected_year} "
     f"({len(yearly_krs)})"
 )
 st.caption(
-    "Updated quarterly during reviews, not weekly. These are the long-arc "
-    "aspirational outcomes — quarterly bets ladder up to them."
+    "Updated quarterly during reviews, not weekly. The long-arc outcomes "
+    "that quarterly bets ladder up to."
 )
 
 if yearly_krs.empty:
     st.info(
-        f"No yearly KRs for **{selected_ou_name}** in FY{selected_year}. "
-        "Aspirational KRs are added on the **Annual Strategy & Objectives** page."
+        f"No yearly KRs match in **{selected_ou_name}** for FY{selected_year} "
+        f"(owner filter: {selected_owner})."
     )
 else:
-    yearly_krs_sorted = yearly_krs.copy()
-    yearly_krs_sorted["__obj_title"] = yearly_krs_sorted["objective_id"].map(
-        obj_title_by_id
-    )
-    yearly_krs_sorted = yearly_krs_sorted.sort_values(["__obj_title", "title"])
-    for _, kr in yearly_krs_sorted.iterrows():
-        obj_title = obj_title_by_id.get(kr["objective_id"], "?")
-        _render_kr_row(kr, obj_title)
+    for _, kr in yearly_krs.sort_values("title").iterrows():
+        render_kr_box(kr)
 
 
 # -----------------------------------------------------------------------------
-# Save / Discard bar at the bottom
+# Save / Discard bar
 # -----------------------------------------------------------------------------
+st.divider()
 pending_count = len(pending)
 
 if pending_count == 0:
@@ -517,14 +612,10 @@ else:
             errors = []
             for kr_id, edit in pending.items():
                 try:
-                    # Update KR current_value if it changed
                     if edit.get("value_changed"):
                         sb.table("key_result").update(
                             {"current_value": edit["value"]}
                         ).eq("id", kr_id).execute()
-                    # Insert a check_in history row whenever there's a value
-                    # change OR a non-empty note. (Pure note-only entries
-                    # capture context even if the value didn't move.)
                     if edit.get("value_changed") or edit.get("note_changed"):
                         try:
                             sb.table("check_in").insert(
@@ -536,11 +627,8 @@ else:
                             ).execute()
                             history_count += 1
                         except Exception as ce:
-                            # If the check_in table doesn't exist yet, the value
-                            # update still succeeded — note this but don't fail.
                             errors.append(
-                                f"History for KR {kr_id} not saved "
-                                f"(table missing?): {ce}"
+                                f"History for KR {kr_id} not saved: {ce}"
                             )
                     success_count += 1
                 except Exception as e:
@@ -571,7 +659,7 @@ else:
 # -----------------------------------------------------------------------------
 st.divider()
 st.caption(
-    "Check-ins are about *current state* and context. To restructure KRs — "
-    "rename, retarget, re-parent, change owner — head over to **Plan a "
-    "Quarter** or **Annual Strategy & Objectives**."
+    "Key Result Updates is about *current state* and context. To restructure "
+    "KRs — rename, retarget, re-parent, change owner — head over to "
+    "**Plan a Quarter** or **Annual Strategy & Objectives**."
 )

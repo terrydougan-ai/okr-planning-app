@@ -1,5 +1,5 @@
 """
-Summary — a read-only cascade view of the planning portfolio.
+Plan Narrative — a read-only cascade view of the planning portfolio.
 
 What this page is for:
   Thinking. Not editing, not visualizing flows — just reading the plan as a
@@ -125,6 +125,24 @@ def format_kr_value(kr) -> str:
     return f"{current} / {target} {unit}"
 
 
+def indicator_badge(t) -> str:
+    """Small HTML badge for inline display next to a KR title.
+    Summary renders via cascade_line which permits HTML, so we use a
+    proper styled badge here rather than the plain-emoji fallback used
+    on pages that go through st.expander labels."""
+    if t == "lagging":
+        return (
+            " <span style='background:#FEE2E2;color:#991B1B;padding:1px 6px;"
+            "border-radius:8px;font-size:0.75em'>🎯 LAGGING</span>"
+        )
+    if t == "leading":
+        return (
+            " <span style='background:#DBEAFE;color:#1E40AF;padding:1px 6px;"
+            "border-radius:8px;font-size:0.75em'>📡 LEADING</span>"
+        )
+    return ""
+
+
 # Each cascade level adds this many pixels of left padding. Generous enough
 # that nested levels are obviously below their parents at a glance.
 INDENT_PX = 28
@@ -173,7 +191,7 @@ def obj_status_chip(status: str) -> str:
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
-st.title("📄 Summary")
+st.title("📄 Plan Narrative")
 st.caption(
     "The plan as a document. Strategy cascades into yearly and quarterly "
     "objectives with their KRs, then every initiative in scope is listed "
@@ -389,7 +407,8 @@ for depth, ou_id in enumerate(chain_ids):
                     )
                     cascade_line(
                         3,
-                        f"{grade_color(grade)} <i>Aspirational KR:</i> {ykr['title']} "
+                        f"{grade_color(grade)} <i>Aspirational KR:</i> "
+                        f"{ykr['title']}{indicator_badge(ykr.get('indicator_type'))} "
                         f"<span style='color:#6B7280;font-size:0.9em'>"
                         f"[{format_kr_value(ykr)}]</span>",
                     )
@@ -428,7 +447,8 @@ for depth, ou_id in enumerate(chain_ids):
                         )
                         cascade_line(
                             4,
-                            f"{grade_color(grade)} <i>KR:</i> {qkr['title']} "
+                            f"{grade_color(grade)} <i>KR:</i> "
+                            f"{qkr['title']}{indicator_badge(qkr.get('indicator_type'))} "
                             f"<span style='color:#6B7280;font-size:0.9em'>"
                             f"[{format_kr_value(qkr)}]</span>",
                         )
@@ -485,7 +505,8 @@ if not unparented_q.empty:
                 )
                 cascade_line(
                     2,
-                    f"{grade_color(grade)} <i>KR:</i> {qkr['title']} "
+                    f"{grade_color(grade)} <i>KR:</i> "
+                    f"{qkr['title']}{indicator_badge(qkr.get('indicator_type'))} "
                     f"<span style='color:#6B7280;font-size:0.9em'>"
                     f"[{format_kr_value(qkr)}]</span>",
                 )
@@ -609,6 +630,6 @@ else:
 st.divider()
 st.caption(
     "This page is for reading and thinking. For weighted portfolio visuals, "
-    "see **Flow**. For editing, see **Plan a Quarter** or **Annual Strategy & "
+    "see **Plan Flow**. For editing, see **Plan a Quarter** or **Annual Strategy & "
     "Objectives**."
 )

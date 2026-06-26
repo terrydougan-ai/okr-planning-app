@@ -56,6 +56,15 @@ def clear_cache():
 OBJ_STATUSES = ["active", "closed", "archived"]
 COMMON_UNITS = ["%", "count", "USD", "min", "hours", "days", "score", "NPS"]
 
+# KR indicator type — lightweight tag for leading vs lagging vs standalone.
+# See plan_quarter.py for the full rationale.
+INDICATOR_TYPES = ["", "lagging", "leading"]
+INDICATOR_LABELS = {
+    "": "Standalone (no type)",
+    "lagging": "🎯 Lagging",
+    "leading": "📡 Leading",
+}
+
 
 def fy_period(year: int) -> str:
     return f"FY{year}"
@@ -853,8 +862,14 @@ for _, strat in ou_strategies_sorted.iterrows():
                             kr.get("current_value"),
                         )
                         unit = kr.get("metric_unit") or ""
+                        _ind_type = kr.get("indicator_type")
+                        indicator_prefix = ""
+                        if _ind_type == "lagging":
+                            indicator_prefix = "🎯 "
+                        elif _ind_type == "leading":
+                            indicator_prefix = "📡 "
                         kr_header = (
-                            f"{grade_color(grade)} **{kr['title']}** — "
+                            f"{grade_color(grade)} {indicator_prefix}**{kr['title']}** — "
                             f"{kr.get('current_value')} / {kr.get('target_value')} {unit} "
                             f"({grade:.0%})"
                         )
@@ -909,6 +924,19 @@ for _, strat in ou_strategies_sorted.iterrows():
                                     placeholder="e.g. VP Growth",
                                     key=f"yearly_owner_{kr['id']}",
                                 )
+                                cur_kt_indicator = kr.get("indicator_type") or ""
+                                kt_indicator = st.selectbox(
+                                    "Indicator type",
+                                    options=INDICATOR_TYPES,
+                                    index=INDICATOR_TYPES.index(cur_kt_indicator)
+                                    if cur_kt_indicator in INDICATOR_TYPES else 0,
+                                    format_func=lambda t: INDICATOR_LABELS.get(t, t),
+                                    key=f"yearly_indicator_{kr['id']}",
+                                    help=(
+                                        "Leading (early signal), Lagging (final "
+                                        "outcome), or Standalone."
+                                    ),
+                                )
                                 save_k = st.form_submit_button("💾 Save KR")
                                 if save_k:
                                     if not kt_title.strip():
@@ -933,6 +961,7 @@ for _, strat in ou_strategies_sorted.iterrows():
                                                     "target_value": kt_target,
                                                     "current_value": kt_current,
                                                     "owner": kt_owner.strip() or None,
+                                                    "indicator_type": kt_indicator or None,
                                                 }
                                             ).eq("id", kr["id"]).execute()
                                             clear_cache()
@@ -977,6 +1006,16 @@ for _, strat in ou_strategies_sorted.iterrows():
                             placeholder="e.g. VP Growth",
                             help="Who is responsible for moving this KR?",
                         )
+                        nk_indicator = st.selectbox(
+                            "Indicator type",
+                            options=INDICATOR_TYPES,
+                            index=0,
+                            format_func=lambda t: INDICATOR_LABELS.get(t, t),
+                            help=(
+                                "Leading, Lagging, or Standalone — just a label, "
+                                "no rollup math."
+                            ),
+                        )
                         add_k = st.form_submit_button("➕ Add KR", type="primary")
                         if add_k:
                             if not nk_title.strip():
@@ -1002,6 +1041,7 @@ for _, strat in ou_strategies_sorted.iterrows():
                                             "target_value": nk_target,
                                             "current_value": nk_current,
                                             "owner": nk_owner.strip() or None,
+                                            "indicator_type": nk_indicator or None,
                                         }
                                     ).execute()
                                     clear_cache()

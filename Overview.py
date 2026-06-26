@@ -41,8 +41,8 @@ plan_quarter = st.Page(
     default=True,  # the primary working surface
 )
 checkins = st.Page(
-    "views/checkins.py",
-    title="Check-ins",
+    "views/key_result_updates.py",
+    title="Key Result Updates",
     icon="📈",
 )
 initiative_updates = st.Page(
@@ -52,14 +52,19 @@ initiative_updates = st.Page(
 )
 
 # View (read-only) pages
-overview = st.Page(
-    "views/overview.py",
-    title="Overview",
-    icon="🎯",
+hotspots = st.Page(
+    "views/hotspots.py",
+    title="Hotspots",
+    icon="🔥",
+)
+initiatives = st.Page(
+    "views/initiatives.py",
+    title="Initiatives",
+    icon="🚀",
 )
 summary = st.Page(
-    "views/summary.py",
-    title="Summary",
+    "views/plan_narrative.py",
+    title="Plan Narrative",
     icon="📄",
 )
 objectives = st.Page(
@@ -69,7 +74,7 @@ objectives = st.Page(
 )
 flow = st.Page(
     "views/flow.py",
-    title="Flow",
+    title="Plan Flow",
     icon="🌊",
 )
 
@@ -79,11 +84,11 @@ manage_org = st.Page(
     title="Org Units",
     icon="🏛️",
 )
-manage_krs = st.Page(
-    "views/manage_key_results.py",
-    title="Key Results",
-    icon="📊",
-)
+manage_krs_decommissioned = None  # Manage Key Results page retired; KR editing
+# happens on Plan a Quarter and Annual Strategy. Schema columns
+# parent_key_result_id and contribution_weight stay in the DB as latent
+# infrastructure in case rollup is ever wanted.
+
 create_initiative = st.Page(
     "views/create_initiative.py",
     title="Create Initiative",
@@ -96,10 +101,10 @@ create_initiative = st.Page(
 # ---------------------------------------------------------------------------
 nav = st.navigation(
     {
-        "Plan": [annual_strategy, plan_quarter],
+        "Plan": [annual_strategy, plan_quarter, flow],
         "Track": [checkins, initiative_updates],
-        "Views": [overview, summary, objectives, flow],
-        "Manage": [manage_org, manage_krs, create_initiative],
+        "Views": [hotspots, summary, objectives, initiatives],
+        "Manage": [manage_org, create_initiative],
     }
 )
 

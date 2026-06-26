@@ -124,41 +124,103 @@ if org_units.empty:
     st.warning("No org units yet — run the seed SQL first.")
     st.stop()
 
-# --- Sidebar: org unit picker ------------------------------------------------
-tree = build_org_tree(org_units)
-options = [("__ALL__", "All org units", -1)] + tree
-label_to_id = {label: uid for uid, label, _ in options}
+# --- In-page filter: org unit (tree-indented), with sticky-scope integration ---
+ou_by_id = org_units.set_index("id")["name"].to_dict()
 
-with st.sidebar:
-    st.header("Filter")
-    selected_label = st.radio(
-        "Org unit",
-        options=[label for _, label, _ in options],
-        index=0,
+level_order = {"company": 0, "segment": 1, "team": 2}
+children_by_parent: dict = {}
+for _, row in org_units.iterrows():
+    pid = row["parent_unit_id"]
+    if pid != pid:  # NaN
+        pid = None
+    children_by_parent.setdefault(pid, []).append(row)
+
+tree_labels: list[str] = []
+tree_label_to_id: dict = {}
+
+
+def _walk_org_tree(parent_id, depth: int):
+    siblings = sorted(
+        children_by_parent.get(parent_id, []),
+        key=lambda r: (level_order.get(r.get("level"), 99), r["name"]),
     )
-selected_id = label_to_id[selected_label]
+    for r in siblings:
+        prefix = "↳ " * depth
+        label = f"{prefix}{r['name']}"
+        tree_labels.append(label)
+        tree_label_to_id[label] = r["id"]
+        _walk_org_tree(r["id"], depth + 1)
+
+
+_walk_org_tree(None, 0)
+
+ALL_ORGS_LABEL = "All org units"
+org_dropdown_options = [ALL_ORGS_LABEL] + tree_labels
+
+# Sticky-scope default
+_saved_org_id = st.session_state.get("scope_org_id")
+_default_org_idx = 0
+if _saved_org_id:
+    for _i, _lbl in enumerate(org_dropdown_options):
+        if tree_label_to_id.get(_lbl) == _saved_org_id:
+            _default_org_idx = _i
+            break
+
+selected_org_label = st.selectbox(
+    "**Working on**",
+    options=org_dropdown_options,
+    index=_default_org_idx,
+    help=(
+        "Pick an org unit to see its objectives. Indented entries (↳) sit "
+        "under the unit above them. 'All org units' shows everything. "
+        "Persists across pages."
+    ),
+)
+
+# Persist scope (specific org only — "All" stays local)
+if selected_org_label != ALL_ORGS_LABEL:
+    _scope_id = tree_label_to_id.get(selected_org_label)
+    if _scope_id:
+        st.session_state["scope_org_id"] = _scope_id
+        st.session_state["scope_org_name"] = ou_by_id.get(_scope_id, selected_org_label)
 
 # --- Filter objectives by org unit selection ---------------------------------
-if selected_id == "__ALL__":
+if selected_org_label == ALL_ORGS_LABEL:
     visible_objectives = objectives.copy()
 else:
+    selected_id = tree_label_to_id.get(selected_org_label)
     visible_objectives = objectives[objectives["org_unit_id"] == selected_id].copy()
 
 if visible_objectives.empty:
     st.info(
-        f"**{selected_label}** has no objectives of its own. "
+        f"**{selected_org_label}** has no objectives of its own. "
         "Org units in the middle of the cascade (like a segment) often act as "
         "structural parents without owning objectives directly."
     )
     st.stop()
 
 # Lookup tables for fast joins
-ou_by_id = org_units.set_index("id")["name"].to_dict()
 kr_by_id = key_results.set_index("id").to_dict("index") if not key_results.empty else {}
 obj_by_id = objectives.set_index("id").to_dict("index")
 init_by_id = (
     initiatives.set_index("id").to_dict("index") if not initiatives.empty else {}
 )
+
+
+# Exec health emoji for initiatives (matches Initiative Updates page convention)
+EXEC_RAG_ICONS = {
+    "on_track":  "🟢",
+    "at_risk":   "🟡",
+    "off_track": "🔴",
+    "blocked":   "🚧",
+}
+
+
+def exec_health_display(rag) -> str:
+    """One-character display for the initiative's exec RAG."""
+    if not isinstance(rag, str):
+        return "—"
+    return EXEC_RAG_ICONS.get(rag, "—")
 
 # --- Render objectives -------------------------------------------------------
 for _, obj in visible_objectives.iterrows():
@@ -235,10 +297,13 @@ for _, obj in visible_objectives.iterrows():
                     rows = []
                     for _, lk in kr_links.iterrows():
                         init = init_by_id.get(lk["initiative_id"], {})
+                        owner_val = init.get("owner")
                         rows.append(
                             {
                                 "initiative": init.get("title", "?"),
+                                "owner": owner_val if isinstance(owner_val, str) and owner_val.strip() else "—",
                                 "status": init.get("status", ""),
+                                "exec health": exec_health_display(init.get("exec_rag")),
                                 "delivery %": init.get("progress_pct", 0),
                                 "predicted impact": lk.get("predicted_kr_impact"),
                                 "actual impact": lk.get("actual_kr_impact"),

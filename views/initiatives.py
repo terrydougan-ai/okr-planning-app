@@ -1,39 +1,58 @@
 """
-Initiatives — initiative-centric workspace.
+Initiatives — read-only structural view of the initiative portfolio.
 
-This is the operational home for initiatives:
-  * View the portfolio with status / org / KR-count summaries.
-  * Edit each initiative's core fields (title, owner, status, milestone, effort,
-    progress, description) inline.
-  * Manage KR links from the initiative side: edit predicted/actual impact per
-    link, unlink, or link to additional KRs (cross-objective is fine).
-  * Edit the business case.
-  * Delete (with cascade-aware confirmation).
+Mirrors Objectives & KRs in shape:
+  * Org unit picker at the top (tree-indented, sticky scope)
+  * Org grouping (one section per team in scope)
+  * Each initiative renders as its own card with key facts visible at a
+    glance + a small table of linked KRs underneath
 
-Why this page exists as an editor (not just a viewer):
-  Initiatives are first-class objects. Plan a Quarter buries them four levels
-  deep inside KR cards, which makes sense when you're working FROM a KR — but
-  awkward when the initiative is what you're working ON, especially for multi-
-  KR initiatives where there's no single "right" KR to drill through.
+Differences from Initiative Updates (Track section):
+  * Updates is an editor — fast typing-in of milestone status, narratives,
+    delivery %
+  * Initiatives (this page) is a read-only "what does the portfolio look
+    like?" — sibling to Objectives & KRs
 
-Delivery, impact, and ROI stay as three distinct measurements throughout —
-never collapsed into a single "health" score.
+The initiative card shows:
+  * Header row: milestone icon, title, exec icon + delivery %
+  * Sub-row: owner, effort, status
+  * Next milestone (text + date) when set
+  * Exec narrative when set
+  * Linked KRs table (matches the table on Objectives & KRs for consistency)
+
+Sort order within each team: blocked/off-track first, then at-risk, then
+on-track, then no-signal. Within each tier, alphabetical by title.
 """
 
 import streamlit as st
 import pandas as pd
+from datetime import date
 from supabase import create_client, Client
 
 
-# Constants — kept in sync with Plan a Quarter so values mean the same thing.
-INIT_STATUSES = ["proposed", "active", "done", "killed"]
-MILESTONE_STATUSES = ["on_track", "at_risk", "blocked"]
-EFFORT_SIZES = ["", "XS", "S", "M", "L", "XL"]
+# -----------------------------------------------------------------------------
+# Constants — mirror the rest of the app
+# -----------------------------------------------------------------------------
+EXEC_RAG_ICONS = {
+    "on_track":  "🟢",
+    "at_risk":   "🟡",
+    "off_track": "🔴",
+    "blocked":   "🚧",
+}
+MS_LABELS = {
+    "on_track":  "on track",
+    "at_risk":   "at risk",
+    "off_track": "off track",
+    "blocked":   "blocked",
+}
+STATUS_BADGES = {
+    "proposed": "💭 proposed",
+    "active":   "🟢 active",
+    "done":     "✅ done",
+    "killed":   "🪦 killed",
+}
 
 
-# -----------------------------------------------------------------------------
-# Supabase
-# -----------------------------------------------------------------------------
 @st.cache_resource
 def get_supabase() -> Client:
     return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
@@ -42,59 +61,77 @@ def get_supabase() -> Client:
 sb = get_supabase()
 
 
-# -----------------------------------------------------------------------------
-# Data
-# -----------------------------------------------------------------------------
 @st.cache_data(ttl=60)
 def load_all():
     return {
+        "org_units": pd.DataFrame(sb.table("org_unit").select("*").execute().data),
+        "objectives": pd.DataFrame(sb.table("objective").select("*").execute().data),
+        "key_results": pd.DataFrame(sb.table("key_result").select("*").execute().data),
         "initiatives": pd.DataFrame(sb.table("initiative").select("*").execute().data),
         "links": pd.DataFrame(sb.table("initiative_key_result").select("*").execute().data),
-        "key_results": pd.DataFrame(sb.table("key_result").select("*").execute().data),
-        "objectives": pd.DataFrame(sb.table("objective").select("*").execute().data),
-        "org_units": pd.DataFrame(sb.table("org_unit").select("*").execute().data),
-        "business_cases": pd.DataFrame(sb.table("business_case").select("*").execute().data),
     }
-
-
-def clear_cache():
-    load_all.clear()
 
 
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
-def status_badge(status: str) -> str:
-    return {
-        "proposed": "💭 proposed",
-        "active":   "🟢 active",
-        "done":     "✅ done",
-        "killed":   "🪦 killed",
-    }.get(status, status or "—")
-
-
-def milestone_badge(ms: str) -> str:
-    return {
-        "on_track": "🟢 on track",
-        "at_risk":  "🟡 at risk",
-        "blocked":  "🔴 blocked",
-    }.get(ms, ms or "—")
-
-
-def fmt_money(v) -> str:
-    if v is None or pd.isna(v):
-        return "—"
-    return f"${v:,.0f}"
-
-
-def fmt_ratio(num, denom) -> str:
-    if num is None or denom is None or pd.isna(num) or pd.isna(denom) or denom == 0:
-        return "—"
-    return f"{num / denom:.1f}x"
-
-
 def safe_str(v) -> str:
     return v if isinstance(v, str) else ""
+
+
+def parse_date_safe(v):
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return None
+    if isinstance(v, date):
+        return v
+    try:
+        return pd.to_datetime(v).date()
+    except Exception:
+        return None
+
+
+def kr_progress(start, target, current) -> float:
+    if start is None or target is None or current is None:
+        return 0.0
+    try:
+        if target == start:
+            return 0.0
+        return max(0.0, min(1.0, (current - start) / (target - start)))
+    except (TypeError, ZeroDivisionError):
+        return 0.0
+
+
+def worst_signal(init):
+    """Worst of milestone_status and exec_rag for this initiative.
+    Returns 'blocked', 'off_track', 'at_risk', 'on_track', or None.
+    Used for sort order — done/killed go to the bottom regardless."""
+    severity = {"blocked": 0, "off_track": 1, "at_risk": 2, "on_track": 3}
+    worst = None
+    worst_sev = 99
+    for field in ("milestone_status", "exec_rag"):
+        v = init.get(field)
+        if isinstance(v, str) and v in severity:
+            if severity[v] < worst_sev:
+                worst = v
+                worst_sev = severity[v]
+    return worst
+
+
+def sort_key_for_initiative(init):
+    """Sort order within a team's section:
+       1. Worst-of-signal severity (blocked first, no-signal last)
+       2. done/killed go to the bottom regardless
+       3. Alphabetical by title within each tier
+    """
+    status = init.get("status")
+    if status in ("done", "killed"):
+        primary = 99  # bottom
+    else:
+        signal = worst_signal(init)
+        primary = {
+            "blocked": 0, "off_track": 1, "at_risk": 2, "on_track": 3
+        }.get(signal, 4)
+    return (primary, safe_str(init.get("title")).lower())
 
 
 # -----------------------------------------------------------------------------
@@ -102,9 +139,9 @@ def safe_str(v) -> str:
 # -----------------------------------------------------------------------------
 st.title("🚀 Initiatives")
 st.caption(
-    "The portfolio of bets and the workspace for editing them. "
-    "Delivery, impact, and ROI shown as three distinct measurements — "
-    "never collapsed."
+    "Read-only structural view of the initiative portfolio — sibling to "
+    "Objectives & KRs. For editing, see **Manage → Create Initiative** "
+    "(structural fields) or **Track → Initiative Updates** (status + narrative)."
 )
 
 try:
@@ -113,569 +150,348 @@ except Exception as e:
     st.error(f"Couldn't reach Supabase: {e}")
     st.stop()
 
+org_units = data["org_units"]
+objectives = data["objectives"]
+key_results = data["key_results"]
 initiatives = data["initiatives"]
 links = data["links"]
-key_results = data["key_results"]
-objectives = data["objectives"]
-org_units = data["org_units"]
-business_cases = data["business_cases"]
+
+if org_units.empty:
+    st.warning("No org units yet.")
+    st.stop()
 
 if initiatives.empty:
-    st.warning("No initiatives yet. Add one via **Plan a Quarter** under any KR.")
+    st.info(
+        "No initiatives defined yet. Create some on **Manage → Create "
+        "Initiative**."
+    )
     st.stop()
 
+
+# -----------------------------------------------------------------------------
 # Lookups
+# -----------------------------------------------------------------------------
+ou_name_by_id = org_units.set_index("id")["name"].to_dict()
 kr_by_id = key_results.set_index("id").to_dict("index") if not key_results.empty else {}
 obj_by_id = objectives.set_index("id").to_dict("index") if not objectives.empty else {}
-ou_name_by_id = org_units.set_index("id")["name"].to_dict() if not org_units.empty else {}
-ou_id_by_name = {v: k for k, v in ou_name_by_id.items()}
-bc_by_init = (
-    business_cases.set_index("initiative_id").to_dict("index")
-    if not business_cases.empty
-    else {}
-)
 
 
 # -----------------------------------------------------------------------------
-# In-page filters
+# Org tree (for the picker)
 # -----------------------------------------------------------------------------
-# Initiatives don't have a direct org_unit_id — they belong to objectives via
-# their KR links. Filtering by org means: "initiatives moving at least one KR
-# whose objective is in this org unit."
-all_orgs = ["All org units"] + sorted(ou_name_by_id.values())
+level_order = {"company": 0, "segment": 1, "team": 2}
+children_by_parent: dict = {}
+for _, row in org_units.iterrows():
+    pid = row["parent_unit_id"]
+    if pid != pid:
+        pid = None
+    children_by_parent.setdefault(pid, []).append(row)
+
+tree_labels: list[str] = []
+tree_label_to_id: dict = {}
+tree_depth_by_id: dict = {}
+
+
+def _walk_org_tree(parent_id, depth: int):
+    siblings = sorted(
+        children_by_parent.get(parent_id, []),
+        key=lambda r: (level_order.get(r.get("level"), 99), r["name"]),
+    )
+    for r in siblings:
+        prefix = "↳ " * depth
+        label = f"{prefix}{r['name']}"
+        tree_labels.append(label)
+        tree_label_to_id[label] = r["id"]
+        tree_depth_by_id[r["id"]] = depth
+        _walk_org_tree(r["id"], depth + 1)
+
+
+_walk_org_tree(None, 0)
+
+ALL_ORGS_LABEL = "All org units"
+org_dropdown_options = [ALL_ORGS_LABEL] + tree_labels
+
 _saved_org_id = st.session_state.get("scope_org_id")
-_default_org_label = "All org units"
-if _saved_org_id and _saved_org_id in ou_name_by_id:
-    _candidate_name = ou_name_by_id[_saved_org_id]
-    if _candidate_name in all_orgs:
-        _default_org_label = _candidate_name
-_default_org_idx = all_orgs.index(_default_org_label)
+_default_org_idx = 0
+if _saved_org_id:
+    for _i, _lbl in enumerate(org_dropdown_options):
+        if tree_label_to_id.get(_lbl) == _saved_org_id:
+            _default_org_idx = _i
+            break
 
-all_statuses = ["all"] + INIT_STATUSES
-
-fc1, fc2 = st.columns([2, 1])
-with fc1:
-    org_filter = st.selectbox(
-        "**Org unit**",
-        options=all_orgs,
-        index=_default_org_idx,
-        help=(
-            "Filter to initiatives moving at least one KR in this org unit's "
-            "objectives. Persists across pages."
-        ),
-    )
-with fc2:
-    status_filter = st.selectbox(
-        "**Status**",
-        options=all_statuses,
-        index=0,
-        format_func=lambda s: status_badge(s) if s != "all" else "All statuses",
-    )
-
-# Persist org scope (specific selections only — "All" doesn't propagate)
-if org_filter != "All org units" and org_filter in ou_id_by_name:
-    st.session_state["scope_org_id"] = ou_id_by_name[org_filter]
-    st.session_state["scope_org_name"] = org_filter
-
-
-# -----------------------------------------------------------------------------
-# Apply filters
-# -----------------------------------------------------------------------------
-visible = initiatives.copy()
-if status_filter != "all":
-    visible = visible[visible["status"] == status_filter]
-
-if org_filter != "All org units":
-    filter_org_id = ou_id_by_name.get(org_filter)
-    if filter_org_id is not None:
-        # KRs whose objective is in this org
-        objs_in_org = (
-            objectives[objectives["org_unit_id"] == filter_org_id]
-            if not objectives.empty else pd.DataFrame()
-        )
-        obj_ids_in_org = set(objs_in_org["id"]) if not objs_in_org.empty else set()
-        krs_in_org = (
-            key_results[key_results["objective_id"].isin(obj_ids_in_org)]
-            if obj_ids_in_org and not key_results.empty else pd.DataFrame()
-        )
-        kr_ids_in_org = set(krs_in_org["id"]) if not krs_in_org.empty else set()
-        init_ids_in_org = (
-            set(links[links["key_result_id"].isin(kr_ids_in_org)]["initiative_id"].tolist())
-            if kr_ids_in_org and not links.empty else set()
-        )
-        visible = visible[visible["id"].isin(init_ids_in_org)]
-
-
-if visible.empty:
-    st.info(
-        f"No initiatives match these filters "
-        f"(org: {org_filter}, status: {status_filter})."
-    )
-    st.stop()
-
-
-# -----------------------------------------------------------------------------
-# Summary strip
-# -----------------------------------------------------------------------------
-total_predicted_value = 0.0
-total_predicted_cost = 0.0
-for _, init in visible.iterrows():
-    bc = bc_by_init.get(init["id"])
-    if bc:
-        v = bc.get("predicted_value") or 0
-        c = bc.get("predicted_cost") or 0
-        total_predicted_value += v
-        total_predicted_cost += c
-
-sc1, sc2, sc3, sc4 = st.columns(4)
-sc1.metric("Initiatives shown", len(visible))
-sc2.metric("Predicted value", fmt_money(total_predicted_value))
-sc3.metric("Predicted cost", fmt_money(total_predicted_cost))
-sc4.metric("Portfolio ROI", fmt_ratio(total_predicted_value, total_predicted_cost))
-
-st.caption(
-    "_Portfolio ROI is a naive sum across business cases — "
-    "see note on attribution at the bottom._"
+selected_org_label = st.selectbox(
+    "**Working on**",
+    options=org_dropdown_options,
+    index=_default_org_idx,
+    help=(
+        "Pick an org unit to see its initiatives. 'All org units' shows "
+        "everything grouped by team. Persists across pages."
+    ),
 )
 
-st.divider()
+if selected_org_label != ALL_ORGS_LABEL:
+    _scope_id = tree_label_to_id.get(selected_org_label)
+    if _scope_id:
+        st.session_state["scope_org_id"] = _scope_id
+        st.session_state["scope_org_name"] = ou_name_by_id.get(
+            _scope_id, selected_org_label
+        )
 
 
 # -----------------------------------------------------------------------------
-# Per-initiative editable cards (collapsed by default)
+# Build the per-org grouping
 # -----------------------------------------------------------------------------
-# Sort by status (active first, then proposed, then done/killed), then by # of
-# KRs moved (descending), so the bets most worth looking at surface at the top.
-status_rank = {"active": 0, "proposed": 1, "done": 2, "killed": 3}
-sorted_initiatives = []
-for _, init in visible.iterrows():
-    init_links_local = links[links["initiative_id"] == init["id"]] if not links.empty else pd.DataFrame()
-    sorted_initiatives.append({
-        "init": init,
-        "kr_count": len(init_links_local),
-        "rank": status_rank.get(init.get("status"), 99),
-    })
-sorted_initiatives.sort(key=lambda x: (x["rank"], -x["kr_count"], safe_str(x["init"].get("title"))))
+# An initiative belongs to an org via:
+#   1. Its org_unit_id (the direct owning team)
+#   2. As a fallback for legacy data, via the KR(s) it links to
+# When org_unit_id is set, use that. When not, infer from the first linked KR's
+# objective's org (best-effort). When still nothing, it goes under "Contextless".
+
+links_by_init: dict = {}
+if not links.empty:
+    for _, lk in links.iterrows():
+        links_by_init.setdefault(lk["initiative_id"], []).append(lk)
 
 
-for entry in sorted_initiatives:
-    init = entry["init"]
+def org_for_initiative(init) -> str | None:
+    """Returns the ou_id this initiative belongs to (or None if contextless)."""
+    direct = init.get("org_unit_id")
+    if isinstance(direct, str) and direct in ou_name_by_id:
+        return direct
+    # Fallback: infer from first linked KR's objective's org
+    init_links = links_by_init.get(init["id"], [])
+    for lk in init_links:
+        kr = kr_by_id.get(lk.get("key_result_id"))
+        if kr:
+            obj = obj_by_id.get(kr.get("objective_id"))
+            if obj:
+                ou_id = obj.get("org_unit_id")
+                if isinstance(ou_id, str) and ou_id in ou_name_by_id:
+                    return ou_id
+    return None
+
+
+# Filter initiatives by scope
+if selected_org_label == ALL_ORGS_LABEL:
+    in_scope_ou_ids = set(org_units["id"].tolist())
+else:
+    # Family = self + descendants (mirrors Hotspots' "drill" semantics)
+    selected_ou_id = tree_label_to_id[selected_org_label]
+    in_scope_ou_ids = {selected_ou_id}
+    stack = list(children_by_parent.get(selected_ou_id, []))
+    visited = set()
+    while stack:
+        row = stack.pop()
+        rid = row["id"]
+        if rid in visited:
+            continue
+        visited.add(rid)
+        in_scope_ou_ids.add(rid)
+        stack.extend(children_by_parent.get(rid, []))
+
+# Group initiatives by their owning org
+inits_by_org: dict = {}
+contextless_inits = []
+for _, init in initiatives.iterrows():
+    owning_ou = org_for_initiative(init)
+    if owning_ou is None:
+        contextless_inits.append(init)
+        continue
+    if owning_ou not in in_scope_ou_ids:
+        continue
+    inits_by_org.setdefault(owning_ou, []).append(init)
+
+
+# -----------------------------------------------------------------------------
+# Card rendering
+# -----------------------------------------------------------------------------
+def _render_kr_link_table(init_id):
+    """Small table of linked KRs for this initiative. Matches the columns on
+    Objectives & KRs for visual consistency between the two pages."""
+    init_links = links_by_init.get(init_id, [])
+    if not init_links:
+        st.caption(
+            "_No KRs linked to this initiative. Either it's an orphan "
+            "(should be linked on Manage → Create Initiative) or it's been "
+            "intentionally unlinked._"
+        )
+        return
+    rows = []
+    for lk in init_links:
+        kr = kr_by_id.get(lk.get("key_result_id"))
+        if not kr:
+            continue
+        progress = kr_progress(
+            kr.get("start_value"), kr.get("target_value"), kr.get("current_value")
+        )
+        rows.append({
+            "KR": kr.get("title", "?"),
+            "unit": kr.get("metric_unit") or "",
+            "progress": f"{progress:.0%}",
+            "predicted impact": lk.get("predicted_kr_impact"),
+            "actual impact": lk.get("actual_kr_impact"),
+        })
+    if rows:
+        st.dataframe(
+            pd.DataFrame(rows), use_container_width=True, hide_index=True,
+        )
+
+
+def _render_initiative_card(init):
+    """A single initiative as a bordered card with key facts + linked KRs."""
     init_id = init["id"]
-    kr_count_for_header = entry["kr_count"]
+    title = init.get("title", "?")
+    owner = safe_str(init.get("owner")) or "—"
+    effort = safe_str(init.get("effort_estimate")) or "—"
+    status = init.get("status") or "—"
+    status_badge = STATUS_BADGES.get(status, status)
+    ms = init.get("milestone_status")
+    exec_rag = init.get("exec_rag")
+    ms_icon = EXEC_RAG_ICONS.get(ms, "⚪") if isinstance(ms, str) else "⚪"
+    exec_icon = EXEC_RAG_ICONS.get(exec_rag, "⚪") if isinstance(exec_rag, str) else "⚪"
+    delivery = init.get("progress_pct") or 0
 
-    multi_kr_tag = (
-        f"  ·  📌 moves {kr_count_for_header} KRs"
-        if kr_count_for_header > 1 else ""
-    )
-    header = (
-        f"{status_badge(init['status'])}  ·  "
-        f"{milestone_badge(init.get('milestone_status'))}  —  "
-        f"**{init['title']}**{multi_kr_tag}"
-    )
+    next_ms_text = safe_str(init.get("next_milestone_text")).strip()
+    next_ms_date = parse_date_safe(init.get("next_milestone_date"))
+    exec_narrative = safe_str(init.get("exec_narrative")).strip()
 
-    with st.expander(header, expanded=False):
-        # ----- Core fields edit form ------------------------------------
-        with st.form(f"edit_init_core_{init_id}"):
-            ec1, ec2 = st.columns([3, 1])
-            with ec1:
-                ei_title = st.text_input("Title", value=init["title"])
-            with ec2:
-                ei_owner = st.text_input("Owner", value=init.get("owner") or "")
-
-            ec3, ec4, ec5, ec6 = st.columns(4)
-            with ec3:
-                ei_status = st.selectbox(
-                    "Status",
-                    options=INIT_STATUSES,
-                    index=INIT_STATUSES.index(init.get("status", "proposed"))
-                    if init.get("status") in INIT_STATUSES else 0,
-                )
-            with ec4:
-                cur_ms = init.get("milestone_status")
-                ms_opts = [""] + MILESTONE_STATUSES
-                ei_ms = st.selectbox(
-                    "Milestone",
-                    options=ms_opts,
-                    index=ms_opts.index(cur_ms) if cur_ms in ms_opts else 0,
-                    help=(
-                        "Owner's judgment of execution health. Separate from "
-                        "KR progress — an initiative can be 'on track' while "
-                        "its KRs are slipping (or vice versa)."
-                    ),
-                )
-            with ec5:
-                cur_effort = init.get("effort_estimate") or ""
-                ei_effort = st.selectbox(
-                    "Effort",
-                    options=EFFORT_SIZES,
-                    index=EFFORT_SIZES.index(cur_effort)
-                    if cur_effort in EFFORT_SIZES else 0,
-                )
-            with ec6:
-                ei_progress = st.number_input(
-                    "Delivery %",
-                    min_value=0.0, max_value=100.0,
-                    value=float(init.get("progress_pct") or 0),
-                    step=5.0,
-                )
-
-            ei_desc = st.text_area(
-                "Description",
-                value=init.get("description") or "",
-                height=80,
+    with st.container(border=True):
+        # Header row: milestone icon + title (left) | exec + delivery (right)
+        h1, h2 = st.columns([3, 1])
+        with h1:
+            st.markdown(
+                f"### {ms_icon} {title}",
+            )
+        with h2:
+            st.markdown(
+                f"<div style='text-align:right;font-size:0.9em;color:#374151;"
+                f"padding-top:6px'>"
+                f"exec {exec_icon} · {delivery}% delivery"
+                f"</div>",
+                unsafe_allow_html=True,
             )
 
-            save_core = st.form_submit_button("💾 Save initiative", type="primary")
-            if save_core:
-                if not ei_title.strip():
-                    st.error("Title is required.")
-                else:
-                    try:
-                        sb.table("initiative").update({
-                            "title": ei_title.strip(),
-                            "owner": ei_owner.strip() or None,
-                            "status": ei_status,
-                            "milestone_status": ei_ms or None,
-                            "effort_estimate": ei_effort or None,
-                            "progress_pct": ei_progress,
-                            "description": ei_desc.strip() or None,
-                        }).eq("id", init_id).execute()
-                        clear_cache()
-                        st.success("Initiative saved.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Update failed: {e}")
-
-        # Delivery progress bar (read-only visualization of the saved value)
-        st.progress((init.get("progress_pct") or 0) / 100)
-
-        # ----- Linked KRs section ---------------------------------------
-        st.markdown("---")
-        st.markdown("**Linked Key Results (impact layer)**")
-
-        init_links = links[links["initiative_id"] == init_id] if not links.empty else pd.DataFrame()
-
-        if init_links.empty:
-            st.info(
-                "No KRs linked. This initiative isn't aimed at a measurable "
-                "outcome — link it to at least one KR below."
-            )
-        else:
-            for _, lk in init_links.iterrows():
-                kr_id = lk["key_result_id"]
-                kr = kr_by_id.get(kr_id, {})
-                obj = obj_by_id.get(kr.get("objective_id"), {})
-                ou_name = ou_name_by_id.get(obj.get("org_unit_id"), "—")
-                kr_unit = kr.get("metric_unit") or ""
-                kr_title = kr.get("title", "?")
-
-                # KR header + unlink button on the right
-                lkr_c1, lkr_c2 = st.columns([4, 1])
-                with lkr_c1:
-                    st.markdown(
-                        f"**{kr_title}** "
-                        f"<span style='color:#6B7280;font-size:0.85em'>"
-                        f"({ou_name} · target {kr.get('target_value')} {kr_unit})"
-                        f"</span>",
-                        unsafe_allow_html=True,
-                    )
-                with lkr_c2:
-                    unlink_confirm_key = f"init_unlink_{init_id}_{kr_id}"
-                    if st.session_state.get(unlink_confirm_key):
-                        if st.button(
-                            "✓ Confirm unlink",
-                            key=f"init_unlink_do_{init_id}_{kr_id}",
-                            use_container_width=True,
-                        ):
-                            try:
-                                sb.table("initiative_key_result").delete().eq(
-                                    "initiative_id", init_id
-                                ).eq("key_result_id", kr_id).execute()
-                                st.session_state.pop(unlink_confirm_key, None)
-                                clear_cache()
-                                st.success(f"Unlinked from **{kr_title}**.")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Unlink failed: {e}")
-                    else:
-                        if st.button(
-                            "🔗 Unlink",
-                            key=f"init_unlink_ask_{init_id}_{kr_id}",
-                            use_container_width=True,
-                        ):
-                            st.session_state[unlink_confirm_key] = True
-                            st.rerun()
-
-                # Edit predicted / actual impact for this link
-                with st.form(f"edit_link_{init_id}_{kr_id}"):
-                    pi1, pi2 = st.columns(2)
-                    with pi1:
-                        link_predicted = st.number_input(
-                            f"Predicted Δ ({kr_unit})",
-                            value=float(lk.get("predicted_kr_impact") or 0),
-                            step=1.0,
-                            format="%.2f",
-                            key=f"pred_{init_id}_{kr_id}",
-                            help=(
-                                "Absolute change in the KR's value. Not a "
-                                "weight or percentage."
-                            ),
-                        )
-                        kr_current = kr.get("current_value") or 0
-                        kr_target = kr.get("target_value") or 0
-                        projected = kr_current + link_predicted
-                        st.caption(
-                            f"→ moves KR from **{kr_current} {kr_unit}** to "
-                            f"**{projected:g} {kr_unit}** (target {kr_target} {kr_unit})"
-                        )
-                    with pi2:
-                        link_actual = st.number_input(
-                            f"Actual Δ ({kr_unit})",
-                            value=float(lk.get("actual_kr_impact") or 0),
-                            step=1.0,
-                            format="%.2f",
-                            key=f"act_{init_id}_{kr_id}",
-                            help="Measured change after the initiative ran.",
-                        )
-                    save_link = st.form_submit_button("💾 Save impact")
-                    if save_link:
-                        try:
-                            sb.table("initiative_key_result").update({
-                                "predicted_kr_impact": link_predicted if link_predicted != 0 else None,
-                                "actual_kr_impact": link_actual if link_actual != 0 else None,
-                            }).eq("initiative_id", init_id).eq("key_result_id", kr_id).execute()
-                            clear_cache()
-                            st.success("Impact saved.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Save failed: {e}")
-
-        # ----- Link to an additional KR ---------------------------------
-        # Show all KRs not already linked to this initiative. Group display
-        # by org unit so the picker is navigable when there are many KRs.
-        already_linked_kr_ids = set(init_links["key_result_id"].tolist()) if not init_links.empty else set()
-        linkable_krs = (
-            key_results[~key_results["id"].isin(already_linked_kr_ids)]
-            if not key_results.empty else pd.DataFrame()
+        # Sub-row: owner / effort / status
+        st.markdown(
+            f"<div style='color:#6B7280;font-size:0.9em;margin-top:-8px'>"
+            f"owner: <b>{owner}</b> &nbsp;·&nbsp; "
+            f"effort: <b>{effort}</b> &nbsp;·&nbsp; "
+            f"status: {status_badge}"
+            f"</div>",
+            unsafe_allow_html=True,
         )
-        if not linkable_krs.empty:
-            with st.expander("🔗 Link an additional KR to this initiative", expanded=False):
-                with st.form(f"add_link_to_init_{init_id}"):
-                    # Build a labeled picker: "[Org] · KR Title (unit)"
-                    link_options = []
-                    link_id_by_label = {}
-                    for _, candidate_kr in linkable_krs.sort_values("title").iterrows():
-                        c_obj = obj_by_id.get(candidate_kr.get("objective_id"), {})
-                        c_ou_name = ou_name_by_id.get(c_obj.get("org_unit_id"), "?")
-                        c_unit = candidate_kr.get("metric_unit") or ""
-                        c_label = f"[{c_ou_name}] · {candidate_kr['title']} ({c_unit})"
-                        link_options.append(c_label)
-                        link_id_by_label[c_label] = candidate_kr["id"]
 
-                    chosen_label = st.selectbox(
-                        "Pick a KR to link",
-                        options=link_options,
-                        help=(
-                            "Cross-objective and cross-org linking is fine. "
-                            "Only KRs not already linked to this initiative appear."
-                        ),
-                    )
-                    chosen_kr_id = link_id_by_label.get(chosen_label)
-                    chosen_kr = kr_by_id.get(chosen_kr_id, {}) if chosen_kr_id else {}
-                    chosen_unit = chosen_kr.get("metric_unit") or ""
-                    chosen_current = chosen_kr.get("current_value") or 0
-                    chosen_target = chosen_kr.get("target_value") or 0
-
-                    new_predicted = st.number_input(
-                        f"Predicted Δ ({chosen_unit})",
-                        value=0.0, step=1.0,
-                        help=(
-                            "Predicted absolute change in this KR's value "
-                            "(units: same as the KR). Not a weight."
-                        ),
-                    )
-                    projected_new = chosen_current + new_predicted
-                    st.caption(
-                        f"→ would move KR from **{chosen_current} {chosen_unit}** "
-                        f"to **{projected_new:g} {chosen_unit}** "
-                        f"(target {chosen_target} {chosen_unit})"
-                    )
-
-                    add_link_submit = st.form_submit_button("🔗 Link KR", type="primary")
-                    if add_link_submit:
-                        if not chosen_kr_id:
-                            st.error("Pick a KR to link.")
-                        else:
-                            try:
-                                sb.table("initiative_key_result").insert({
-                                    "initiative_id": init_id,
-                                    "key_result_id": chosen_kr_id,
-                                    "predicted_kr_impact": new_predicted if new_predicted != 0 else None,
-                                }).execute()
-                                clear_cache()
-                                st.success(f"Linked to KR.")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Link failed: {e}")
-
-        # ----- Business case ----------------------------------------------
-        st.markdown("---")
-        st.markdown("**Business case (ROI layer)**")
-        bc = bc_by_init.get(init_id)
-
-        with st.form(f"edit_bc_{init_id}"):
-            bc1, bc2 = st.columns(2)
-            with bc1:
-                ei_pv = st.number_input(
-                    "Predicted value ($)",
-                    value=float((bc.get("predicted_value") if bc else None) or 0),
-                    step=1000.0, format="%.0f",
+        # Next milestone (if set)
+        if next_ms_text or next_ms_date:
+            ms_line = "Next: "
+            if next_ms_text:
+                ms_line += f"<i>{next_ms_text}</i>"
+            if next_ms_date:
+                ms_line += (
+                    f" <span style='color:#6B7280'>"
+                    f"(by {next_ms_date.isoformat()})</span>"
                 )
-                ei_av = st.number_input(
-                    "Actual value ($)",
-                    value=float((bc.get("actual_value") if bc else None) or 0),
-                    step=1000.0, format="%.0f",
-                )
-            with bc2:
-                ei_pc = st.number_input(
-                    "Predicted cost ($)",
-                    value=float((bc.get("predicted_cost") if bc else None) or 0),
-                    step=1000.0, format="%.0f",
-                )
-                ei_ac = st.number_input(
-                    "Actual cost ($)",
-                    value=float((bc.get("actual_cost") if bc else None) or 0),
-                    step=1000.0, format="%.0f",
-                )
-
-            ei_metric = st.text_input(
-                "Target metric (free text)",
-                value=(bc.get("target_metric") if bc else None) or "",
-                placeholder="e.g. ARR, cost saved, retention rate",
-            )
-            ei_munit = st.text_input(
-                "Metric unit",
-                value=(bc.get("target_metric_unit") if bc else None) or "",
-                placeholder="$, %, count, etc.",
-            )
-            ei_decision = st.selectbox(
-                "Decision",
-                options=["pending", "approved", "rejected"],
-                index=["pending", "approved", "rejected"].index(
-                    (bc.get("decision") if bc else None) or "pending"
-                ),
-            )
-            ei_summary = st.text_area(
-                "Summary",
-                value=(bc.get("summary") if bc else None) or "",
-                height=70,
-                placeholder="One-paragraph rationale for the bet.",
+            st.markdown(
+                f"<div style='margin-top:8px'>{ms_line}</div>",
+                unsafe_allow_html=True,
             )
 
-            # Live preview
-            roi_predicted_now = fmt_ratio(ei_pv, ei_pc)
-            roi_actual_now = fmt_ratio(ei_av, ei_ac)
-            st.caption(
-                f"Planned ROI: **{roi_predicted_now}** · Realized ROI: **{roi_actual_now}**"
+        # Exec narrative (if set)
+        if exec_narrative:
+            st.markdown(
+                f"<div style='margin-top:8px;color:#4B5563;font-size:0.95em'>"
+                f"<i>“{exec_narrative}”</i>"
+                f"</div>",
+                unsafe_allow_html=True,
             )
 
-            save_bc = st.form_submit_button("💾 Save business case")
-            if save_bc:
-                bc_payload = {
-                    "initiative_id": init_id,
-                    "predicted_value": ei_pv if ei_pv != 0 else None,
-                    "actual_value": ei_av if ei_av != 0 else None,
-                    "predicted_cost": ei_pc if ei_pc != 0 else None,
-                    "actual_cost": ei_ac if ei_ac != 0 else None,
-                    "target_metric": ei_metric.strip() or None,
-                    "target_metric_unit": ei_munit.strip() or None,
-                    "decision": ei_decision,
-                    "summary": ei_summary.strip() or None,
-                }
-                try:
-                    if bc:
-                        # Update existing
-                        sb.table("business_case").update(bc_payload).eq(
-                            "initiative_id", init_id
-                        ).execute()
-                    else:
-                        # Insert new
-                        sb.table("business_case").insert(bc_payload).execute()
-                    clear_cache()
-                    st.success("Business case saved.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Save failed: {e}")
-
-        # ----- Delete initiative -----------------------------------------
-        # Hard delete cascades through initiative_key_result (per the schema's
-        # on delete cascade), but business_case has cascade too. Show the
-        # blast radius so the user knows what disappears.
-        st.markdown("---")
-        _del_blast = (
-            f"{len(init_links)} KR link"
-            f"{'s' if len(init_links) != 1 else ''}"
+        # Linked KRs table
+        st.markdown(
+            "<div style='margin-top:12px;font-weight:600;font-size:0.9em;"
+            "color:#374151'>Linked KRs</div>",
+            unsafe_allow_html=True,
         )
-        if bc:
-            _del_blast += ", 1 business case"
-
-        dc1, dc2 = st.columns([4, 1])
-        with dc2:
-            _del_key = f"init_del_confirm_{init_id}"
-            if st.session_state.get(_del_key):
-                if st.button(
-                    f"⚠ Really delete? ({_del_blast})",
-                    key=f"init_del_do_{init_id}",
-                    use_container_width=True,
-                    type="primary",
-                ):
-                    try:
-                        sb.table("initiative").delete().eq("id", init_id).execute()
-                        st.session_state.pop(_del_key, None)
-                        clear_cache()
-                        st.success("Initiative deleted.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Delete failed: {e}")
-            else:
-                if st.button(
-                    "🗑️ Delete initiative",
-                    key=f"init_del_ask_{init_id}",
-                    use_container_width=True,
-                    help=(
-                        "Hard delete. Removes the initiative, all KR links, "
-                        "and the business case (cascade). Irreversible. To "
-                        "'park' an initiative without deleting, set its "
-                        "status to 'killed' above instead."
-                    ),
-                ):
-                    st.session_state[_del_key] = True
-                    st.rerun()
-        with dc1:
-            if st.session_state.get(_del_key):
-                st.caption(
-                    f"⚠ Will affect: **{_del_blast}**. Click the confirmation "
-                    "button to proceed, or anywhere else to cancel."
-                )
+        _render_kr_link_table(init_id)
 
 
 # -----------------------------------------------------------------------------
-# Footnote on attribution
+# Render each org section
+# -----------------------------------------------------------------------------
+# Sort orgs by tree depth + name (mirrors Objectives & KRs / Hotspots ordering)
+def _ordered_ou_ids():
+    ordered = []
+    def _walk(parent_id):
+        siblings = sorted(
+            children_by_parent.get(parent_id, []),
+            key=lambda r: (level_order.get(r.get("level"), 99), r["name"]),
+        )
+        for r in siblings:
+            ordered.append(r["id"])
+            _walk(r["id"])
+    _walk(None)
+    return ordered
+
+
+orgs_in_order = [
+    ou_id for ou_id in _ordered_ou_ids()
+    if ou_id in inits_by_org and inits_by_org[ou_id]
+]
+
+if not orgs_in_order:
+    st.info(
+        f"No initiatives match in **{selected_org_label}**. Either no "
+        "initiatives are owned by this team, or the org_unit_id field is "
+        "unset on them (use **Manage → Create Initiative** to set it)."
+    )
+else:
+    for ou_id in orgs_in_order:
+        depth = tree_depth_by_id.get(ou_id, 0)
+        org_name = ou_name_by_id.get(ou_id, "?")
+        init_count = len(inits_by_org[ou_id])
+        indent_px = depth * 20
+        # Org header line — tree-indented
+        st.markdown(
+            f"<div style='margin-left:{indent_px}px;margin-top:24px'>"
+            f"<h3 style='margin-bottom:8px'>"
+            f"🏛️ {org_name} "
+            f"<span style='color:#6B7280;font-size:0.7em;font-weight:normal'>"
+            f"· {init_count} initiative{'s' if init_count != 1 else ''}"
+            f"</span></h3></div>",
+            unsafe_allow_html=True,
+        )
+        # Render cards in priority order
+        sorted_inits = sorted(inits_by_org[ou_id], key=sort_key_for_initiative)
+        for init in sorted_inits:
+            _render_initiative_card(init)
+
+
+# -----------------------------------------------------------------------------
+# Contextless section — initiatives without org_unit_id AND no KR linkage
+# -----------------------------------------------------------------------------
+if selected_org_label == ALL_ORGS_LABEL and contextless_inits:
+    st.divider()
+    st.markdown(
+        f"### 🪨 Contextless initiatives "
+        f"<span style='color:#6B7280;font-size:0.7em;font-weight:normal'>"
+        f"· {len(contextless_inits)}"
+        f"</span>",
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "_These initiatives have neither an `org_unit_id` set nor any linked "
+        "KRs. Assign an owning team on **Manage → Create Initiative**, or "
+        "delete if no longer relevant._"
+    )
+    for init in sorted(contextless_inits, key=sort_key_for_initiative):
+        _render_initiative_card(init)
+
+
+# -----------------------------------------------------------------------------
+# Footer
 # -----------------------------------------------------------------------------
 st.divider()
-with st.expander("ℹ️ Note on portfolio ROI and attribution"):
-    st.markdown(
-        """
-The **Portfolio ROI** at the top is a naive sum of predicted value over predicted cost
-across every visible business case. That's a fine quick scan, but it has two known
-limitations worth keeping in mind:
-
-1. **Multi-KR initiatives can imply double-counting** if you ever sum impact across
-   the KR links (which we deliberately don't do here — value/ROI lives on the
-   business case, not the joins, specifically to avoid this).
-2. **Attribution gets philosophical** when multiple initiatives feed one KR.
-   Who gets credit for the realized value? This app records each bet's *claimed*
-   contribution but doesn't try to resolve the overlap automatically. That's a
-   modeling decision rather than something the data can answer.
-        """
-    )
+st.caption(
+    "Initiatives is read-only. To create or edit initiatives, see "
+    "**Manage → Create Initiative**. To update status / milestone / narrative, "
+    "see **Track → Initiative Updates**."
+)

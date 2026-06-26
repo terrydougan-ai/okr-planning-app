@@ -115,6 +115,38 @@ def kr_label(kr) -> str:
     return f"[{ou_name}] · {kr['title']} ({unit})"
 
 
+# Build the tree-indented org picker labels used in the create and edit forms.
+# Same pattern as Plan a Quarter / Key Result Updates / etc. — keeps the
+# family relationships visible at a glance when picking.
+_level_order = {"company": 0, "segment": 1, "team": 2}
+_children_by_parent: dict = {}
+for _, _row in org_units.iterrows():
+    _pid = _row["parent_unit_id"]
+    if _pid != _pid:  # NaN
+        _pid = None
+    _children_by_parent.setdefault(_pid, []).append(_row)
+
+org_tree_labels: list[str] = []
+org_tree_label_to_id: dict = {}
+
+
+def _walk_org_tree(parent_id, depth: int):
+    siblings = sorted(
+        _children_by_parent.get(parent_id, []),
+        key=lambda r: (_level_order.get(r.get("level"), 99), r["name"]),
+    )
+    for r in siblings:
+        prefix = "↳ " * depth
+        label = f"{prefix}{r['name']}"
+        org_tree_labels.append(label)
+        org_tree_label_to_id[label] = r["id"]
+        _walk_org_tree(r["id"], depth + 1)
+
+
+_walk_org_tree(None, 0)
+org_tree_id_to_label = {v: k for k, v in org_tree_label_to_id.items()}
+
+
 # -----------------------------------------------------------------------------
 # CREATE NEW INITIATIVE (top-of-page form)
 # -----------------------------------------------------------------------------
@@ -140,6 +172,29 @@ else:
             )
         with c2:
             new_owner = st.text_input("Owner", placeholder="e.g. VP Product")
+
+        # Org Unit picker (required) — establishes which team OWNS this
+        # initiative for reporting purposes. Separate from KR linkage, which
+        # captures what outcomes the initiative is supposed to MOVE.
+        # Cross-team work: one team can own an initiative that moves another
+        # team's KRs.
+        # Default to sticky scope org if set
+        _saved_org_id = st.session_state.get("scope_org_id")
+        _default_org_idx = 0
+        if _saved_org_id and _saved_org_id in org_tree_id_to_label:
+            _candidate = org_tree_id_to_label[_saved_org_id]
+            if _candidate in org_tree_labels:
+                _default_org_idx = org_tree_labels.index(_candidate)
+        new_org_label = st.selectbox(
+            "Owning Org Unit *",
+            options=org_tree_labels,
+            index=_default_org_idx,
+            help=(
+                "Which team owns this initiative? Indented entries (↳) sit "
+                "under the unit above them. This is the team accountable "
+                "for delivery — separate from the KR(s) the initiative moves."
+            ),
+        )
 
         c3, c4 = st.columns(2)
         with c3:
@@ -205,9 +260,11 @@ else:
             else:
                 try:
                     # Insert the initiative row
+                    new_org_id = org_tree_label_to_id.get(new_org_label)
                     insert_result = sb.table("initiative").insert({
                         "title": new_title.strip(),
                         "owner": new_owner.strip() or None,
+                        "org_unit_id": new_org_id,
                         "status": new_status,
                         "effort_estimate": new_effort or None,
                         "description": new_desc.strip() or None,
@@ -293,6 +350,32 @@ else:
                 with ec2:
                     ei_owner = st.text_input("Owner", value=init.get("owner") or "")
 
+                # Org Unit picker — required, but backward-compatible: existing
+                # initiatives without org_unit_id show a (not set) sentinel
+                # at the top of the list so they can be assigned to a team.
+                _cur_ou_id = init.get("org_unit_id")
+                NOT_SET = "— (not set)"
+                ou_options = [NOT_SET] + org_tree_labels if not isinstance(_cur_ou_id, str) or _cur_ou_id not in org_tree_id_to_label else org_tree_labels
+                _cur_label = (
+                    org_tree_id_to_label.get(_cur_ou_id)
+                    if isinstance(_cur_ou_id, str) else None
+                )
+                if _cur_label and _cur_label in ou_options:
+                    _ou_idx = ou_options.index(_cur_label)
+                else:
+                    _ou_idx = 0
+                ei_org_label = st.selectbox(
+                    "Owning Org Unit",
+                    options=ou_options,
+                    index=_ou_idx,
+                    help=(
+                        "Which team owns this initiative? Separate from the "
+                        "KR(s) it moves. Used by Hotspots to roll the "
+                        "initiative's warnings up under the right team."
+                    ),
+                    key=f"create_edit_org_{init_id}",
+                )
+
                 ec3, ec4 = st.columns(2)
                 with ec3:
                     ei_status = st.selectbox(
@@ -322,9 +405,15 @@ else:
                         st.error("Title is required.")
                     else:
                         try:
+                            ei_org_id = (
+                                None
+                                if ei_org_label == NOT_SET
+                                else org_tree_label_to_id.get(ei_org_label)
+                            )
                             sb.table("initiative").update({
                                 "title": ei_title.strip(),
                                 "owner": ei_owner.strip() or None,
+                                "org_unit_id": ei_org_id,
                                 "status": ei_status,
                                 "effort_estimate": ei_effort or None,
                                 "description": ei_desc.strip() or None,

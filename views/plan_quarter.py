@@ -68,6 +68,32 @@ DECISIONS = ["pending", "approved", "rejected"]
 EFFORT_SIZES = ["", "XS", "S", "M", "L", "XL"]
 OBJ_STATUSES = ["active", "closed", "archived"]
 
+# KR indicator type — a lightweight tag for "is this measurement a leading
+# proxy, a lagging outcome, or just standalone?" Schema column is `indicator_type`;
+# UI is a dropdown + a small badge next to KR titles. No rollup math, no parent
+# links — just a label that surfaces causal intent without forcing a structure.
+INDICATOR_TYPES = ["", "lagging", "leading"]
+INDICATOR_LABELS = {
+    "": "Standalone (no type)",
+    "lagging": "🎯 Lagging",
+    "leading": "📡 Leading",
+}
+
+
+def indicator_badge(t) -> str:
+    """Small HTML badge for inline display next to a KR title."""
+    if t == "lagging":
+        return (
+            " <span style='background:#FEE2E2;color:#991B1B;padding:1px 6px;"
+            "border-radius:8px;font-size:0.75em'>🎯 LAGGING</span>"
+        )
+    if t == "leading":
+        return (
+            " <span style='background:#DBEAFE;color:#1E40AF;padding:1px 6px;"
+            "border-radius:8px;font-size:0.75em'>📡 LEADING</span>"
+        )
+    return ""
+
 
 def period_sort_key(period: str) -> tuple:
     if not period:
@@ -883,6 +909,19 @@ for group_key in ordered_group_keys:
                         placeholder="e.g. Head of Onboarding",
                         help="Who is responsible for moving this KR?",
                     )
+                    new_kr_indicator = st.selectbox(
+                        "Indicator type",
+                        options=INDICATOR_TYPES,
+                        index=0,
+                        format_func=lambda t: INDICATOR_LABELS.get(t, t),
+                        help=(
+                            "Lightweight tag — does this KR measure a Leading "
+                            "proxy (acts as an early signal), a Lagging outcome "
+                            "(what you ultimately care about), or is it Standalone "
+                            "(no causal relationship to other KRs)? Just a label — "
+                            "no rollup math."
+                        ),
+                    )
                     prev = kr_progress(new_kr_start, new_kr_target, new_kr_current)
                     st.caption(
                         f"Preview: {grade_color(prev)} **{prev:.0%}** "
@@ -910,6 +949,7 @@ for group_key in ordered_group_keys:
                                         "target_value": new_kr_target,
                                         "current_value": new_kr_current,
                                         "owner": new_kr_owner.strip() or None,
+                                        "indicator_type": new_kr_indicator or None,
                                     }
                                 ).execute()
                                 clear_cache()
@@ -929,8 +969,18 @@ for group_key in ordered_group_keys:
                         kr.get("current_value"),
                     )
                     unit = kr.get("metric_unit") or ""
+                    # Indicator emoji (🎯 lagging / 📡 leading / nothing) shown
+                    # in the expander header so the indicator type is visible
+                    # without expanding. Expander labels don't render HTML, so
+                    # this is plain-emoji rather than a styled badge.
+                    indicator_prefix = ""
+                    _ind_type = kr.get("indicator_type")
+                    if _ind_type == "lagging":
+                        indicator_prefix = "🎯 "
+                    elif _ind_type == "leading":
+                        indicator_prefix = "📡 "
                     kr_header = (
-                        f"{grade_color(grade)} **{kr['title']}** — "
+                        f"{grade_color(grade)} {indicator_prefix}**{kr['title']}** — "
                         f"{kr.get('current_value')} / {kr.get('target_value')} {unit} "
                         f"({grade:.0%})"
                     )
@@ -986,6 +1036,19 @@ for group_key in ordered_group_keys:
                                 placeholder="e.g. Head of Onboarding",
                                 key=f"owner_{kr['id']}",
                             )
+                            cur_indicator = kr.get("indicator_type") or ""
+                            ek_indicator = st.selectbox(
+                                "Indicator type",
+                                options=INDICATOR_TYPES,
+                                index=INDICATOR_TYPES.index(cur_indicator)
+                                if cur_indicator in INDICATOR_TYPES else 0,
+                                format_func=lambda t: INDICATOR_LABELS.get(t, t),
+                                key=f"indicator_{kr['id']}",
+                                help=(
+                                    "Lightweight tag — Leading (early signal), "
+                                    "Lagging (final outcome), or Standalone."
+                                ),
+                            )
                             prev = kr_progress(ek_start, ek_target, ek_current)
                             st.caption(
                                 f"Preview: {grade_color(prev)} **{prev:.0%}** "
@@ -1012,6 +1075,7 @@ for group_key in ordered_group_keys:
                                                 "target_value": ek_target,
                                                 "current_value": ek_current,
                                                 "owner": ek_owner.strip() or None,
+                                                "indicator_type": ek_indicator or None,
                                             }
                                         ).eq("id", kr["id"]).execute()
                                         clear_cache()
