@@ -183,7 +183,12 @@ FRAMEWORK_SVG = """
 </svg>
 """
 
-st.markdown(FRAMEWORK_SVG, unsafe_allow_html=True)
+# Render the SVG via st.components.v1.html. Streamlit's markdown renderer
+# strips SVG tags for security, so components.v1.html (which uses an iframe)
+# is the reliable path for inline vector graphics. Height is set to the
+# SVG's viewBox height plus a small margin so it doesn't get clipped.
+import streamlit.components.v1 as components
+components.html(FRAMEWORK_SVG, height=480, scrolling=False)
 
 
 # -----------------------------------------------------------------------------
