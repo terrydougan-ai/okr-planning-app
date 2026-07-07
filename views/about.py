@@ -17,7 +17,7 @@ import streamlit as st
 
 
 REPO_URL = "https://github.com/terrydougan-ai/okr-planning-app"
-LINKEDIN_URL = "https://www.linkedin.com/in/terrydougan/"
+LINKEDIN_URL = "https://www.linkedin.com/in/terry-dougan-0aa8565/"
 PROFILE_REPO_URL = "https://github.com/terrydougan-ai"
 
 
