@@ -27,7 +27,7 @@ PROFILE_REPO_URL = "https://github.com/terrydougan-ai"
 st.title("👋 About this project")
 
 st.markdown(
-    """
+    f"""
     I've spent a lot of my career watching planning tools flatten
     distinctions that matter. A team reports "we're 80% done shipping"
     — but the scope quietly changed halfway through, so 80% of a smaller
@@ -42,11 +42,13 @@ st.markdown(
     A small, working portfolio piece — not a product — built to
     demonstrate a specific set of modeling decisions.
 
-    It's also a small example of what happens when AI tooling meets
-    the work of strategic planning and execution. The architectural
-    calls and modeling decisions are mine; Claude Code handled a lot
-    of the implementation. That's how a system with this much surface
-    area gets built in evenings and weekends.
+    This has been a fun exercise for me — exploring current AI capabilities
+    while designing something that fits a real need many companies have and
+    few tools meet directly. The concept, design, architectural calls and
+    modeling decisions are mine; Claude Code did a lot of the heavy lifting
+    on the implementation. Send me your feedback via [LinkedIn]({LINKEDIN_URL})
+    — I'm always looking to improve, and eager to learn about your use cases
+    and how something like this might address them.
     """
 )
 
