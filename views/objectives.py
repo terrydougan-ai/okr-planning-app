@@ -177,25 +177,49 @@ selected_org_label = st.selectbox(
     ),
 )
 
-# Persist scope (specific org only — "All" stays local)
+# Persist scope (specific org only — selecting "All" clears it so other
+# pages default broad too)
 if selected_org_label != ALL_ORGS_LABEL:
     _scope_id = tree_label_to_id.get(selected_org_label)
     if _scope_id:
         st.session_state["scope_org_id"] = _scope_id
         st.session_state["scope_org_name"] = ou_by_id.get(_scope_id, selected_org_label)
+else:
+    st.session_state.pop("scope_org_id", None)
+    st.session_state.pop("scope_org_name", None)
 
 # --- Filter objectives by org unit selection ---------------------------------
+# When a parent org is picked, include its descendants — so picking
+# "Acme Analytics" surfaces every team's objectives, not just objectives
+# attached to Acme itself. Mirrors Hotspots / Initiatives behavior.
 if selected_org_label == ALL_ORGS_LABEL:
     visible_objectives = objectives.copy()
 else:
     selected_id = tree_label_to_id.get(selected_org_label)
-    visible_objectives = objectives[objectives["org_unit_id"] == selected_id].copy()
+
+    # Walk the org tree from the selection to collect self + descendants
+    _children_by_parent: dict = {}
+    for _, _row in org_units.iterrows():
+        _pid = _row["parent_unit_id"]
+        if _pid != _pid:  # NaN
+            _pid = None
+        _children_by_parent.setdefault(_pid, []).append(_row["id"])
+
+    family_ids = {selected_id}
+    _stack = list(_children_by_parent.get(selected_id, []))
+    while _stack:
+        _cid = _stack.pop()
+        if _cid in family_ids:
+            continue
+        family_ids.add(_cid)
+        _stack.extend(_children_by_parent.get(_cid, []))
+
+    visible_objectives = objectives[objectives["org_unit_id"].isin(family_ids)].copy()
 
 if visible_objectives.empty:
     st.info(
-        f"**{selected_org_label}** has no objectives of its own. "
-        "Org units in the middle of the cascade (like a segment) often act as "
-        "structural parents without owning objectives directly."
+        f"**{selected_org_label}** has no objectives in scope. "
+        "Try 'All org units' or a different selection."
     )
     st.stop()
 

@@ -261,11 +261,16 @@ with pc2:
         "**Period**", options=period_options, index=default_period_idx,
     )
 
+# Persist scope selection so it carries across pages. Selecting "All org
+# units" clears the scope (so other pages default to their broadest view too).
 if selected_org_label != ALL_ORGS_LABEL:
     _scope_id = tree_label_to_id.get(selected_org_label)
     if _scope_id:
         st.session_state["scope_org_id"] = _scope_id
         st.session_state["scope_org_name"] = ou_name_by_id.get(_scope_id, selected_org_label)
+else:
+    st.session_state.pop("scope_org_id", None)
+    st.session_state.pop("scope_org_name", None)
 st.session_state["scope_period"] = selected_period
 
 selected_year = year_from_period(selected_period)

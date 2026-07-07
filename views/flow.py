@@ -187,13 +187,21 @@ with fc2:
         help="Pick a quarter, a fiscal year, or all periods.",
     )
 
-# Persist scope (only when a specific org / period is picked; 'All' stays local
-# to Flow so it doesn't blank out scope for other pages).
+# Persist scope. Selecting "All" now clears the scope key so other pages
+# consistently default to their broadest view too. Earlier behavior kept
+# "All" local to Flow, which created asymmetric persistence — user picks
+# a team → sticks, user picks All → doesn't stick.
 if selected_ou != "All org units" and selected_ou in ou_id_by_name:
     st.session_state["scope_org_id"] = ou_id_by_name[selected_ou]
     st.session_state["scope_org_name"] = selected_ou
+else:
+    st.session_state.pop("scope_org_id", None)
+    st.session_state.pop("scope_org_name", None)
+
 if selected_period != "All periods":
     st.session_state["scope_period"] = selected_period
+else:
+    st.session_state.pop("scope_period", None)
 
 
 # -----------------------------------------------------------------------------

@@ -225,13 +225,16 @@ with fc3:
         format_func=lambda s: status_badge(s) if s != "all" else "All statuses",
     )
 
-# Persist org scope (specific org selections only)
+# Persist org scope (selecting "All" clears it so other pages default broad too)
 if selected_org_label != ALL_ORGS_LABEL:
     _scope_id = tree_label_to_id.get(selected_org_label)
     if _scope_id:
         st.session_state["scope_org_id"] = _scope_id
         # Find raw org name (strip the ↳ prefix) for the sidebar indicator
         st.session_state["scope_org_name"] = ou_name_by_id.get(_scope_id, selected_org_label)
+else:
+    st.session_state.pop("scope_org_id", None)
+    st.session_state.pop("scope_org_name", None)
 
 
 # Apply filters
@@ -242,15 +245,51 @@ if status_filter != "all":
 if selected_org_label != ALL_ORGS_LABEL:
     filter_org_id = tree_label_to_id.get(selected_org_label)
     if filter_org_id is not None:
-        objs_in_org = objectives[objectives["org_unit_id"] == filter_org_id] if not objectives.empty else pd.DataFrame()
-        obj_ids_in_org = set(objs_in_org["id"]) if not objs_in_org.empty else set()
-        krs_in_org = key_results[key_results["objective_id"].isin(obj_ids_in_org)] if obj_ids_in_org and not key_results.empty else pd.DataFrame()
-        kr_ids_in_org = set(krs_in_org["id"]) if not krs_in_org.empty else set()
-        init_ids_in_org = (
-            set(links[links["key_result_id"].isin(kr_ids_in_org)]["initiative_id"].tolist())
-            if kr_ids_in_org and not links.empty else set()
+        # Build the family (self + descendants). Picking "Acme Analytics"
+        # should include Product, Go-to-Market, Platform — mirrors Hotspots.
+        _children_by_parent: dict = {}
+        for _, _row in org_units.iterrows():
+            _pid = _row["parent_unit_id"]
+            if _pid != _pid:  # NaN check
+                _pid = None
+            _children_by_parent.setdefault(_pid, []).append(_row["id"])
+
+        family_ids = {filter_org_id}
+        _stack = list(_children_by_parent.get(filter_org_id, []))
+        while _stack:
+            _cid = _stack.pop()
+            if _cid in family_ids:
+                continue
+            family_ids.add(_cid)
+            _stack.extend(_children_by_parent.get(_cid, []))
+
+        # Two paths to include an initiative in scope:
+        #   1. It's linked (via KR) to a KR whose objective is under a family org
+        #   2. It's directly owned by a family org (initiative.org_unit_id in family)
+        # An initiative can qualify via either path — mirrors Hotspots.
+        objs_in_family = (
+            objectives[objectives["org_unit_id"].isin(family_ids)]
+            if not objectives.empty else pd.DataFrame()
         )
-        visible = visible[visible["id"].isin(init_ids_in_org)]
+        obj_ids_in_family = set(objs_in_family["id"]) if not objs_in_family.empty else set()
+        krs_in_family = (
+            key_results[key_results["objective_id"].isin(obj_ids_in_family)]
+            if obj_ids_in_family and not key_results.empty else pd.DataFrame()
+        )
+        kr_ids_in_family = set(krs_in_family["id"]) if not krs_in_family.empty else set()
+        linked_init_ids = (
+            set(links[links["key_result_id"].isin(kr_ids_in_family)]["initiative_id"].tolist())
+            if kr_ids_in_family and not links.empty else set()
+        )
+        # Directly-owned initiatives
+        if "org_unit_id" in visible.columns:
+            owned_init_ids = set(
+                visible[visible["org_unit_id"].isin(family_ids)]["id"].tolist()
+            )
+        else:
+            owned_init_ids = set()
+        in_family_init_ids = linked_init_ids | owned_init_ids
+        visible = visible[visible["id"].isin(in_family_init_ids)]
 
 if selected_owner == NO_OWNER_LABEL:
     # NaN-safe "owner is empty" filter

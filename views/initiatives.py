@@ -236,6 +236,9 @@ if selected_org_label != ALL_ORGS_LABEL:
         st.session_state["scope_org_name"] = ou_name_by_id.get(
             _scope_id, selected_org_label
         )
+else:
+    st.session_state.pop("scope_org_id", None)
+    st.session_state.pop("scope_org_name", None)
 
 
 # -----------------------------------------------------------------------------
