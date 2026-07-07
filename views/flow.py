@@ -200,13 +200,33 @@ if selected_period != "All periods":
 # Filter data — yearly + quarterly together, with cascade awareness
 # -----------------------------------------------------------------------------
 # Start by filtering by org unit (applies to both yearly and quarterly equally).
+# When a parent org is picked, include the family (self + descendants) so
+# picking "Acme Analytics" surfaces every team's planning, not just objectives
+# attached to the container node itself. This matches Hotspots' behavior.
 filtered_objs = objectives.copy()
 if selected_ou != "All org units":
     selected_ou_id = next(
         (oid for oid, name in ou_name_by_id.items() if name == selected_ou), None
     )
     if selected_ou_id is not None:
-        filtered_objs = filtered_objs[filtered_objs["org_unit_id"] == selected_ou_id]
+        # Build the family (self + all descendants) via a small tree walk
+        _children_by_parent: dict = {}
+        for _, _row in org_units.iterrows():
+            _pid = _row["parent_unit_id"]
+            if _pid != _pid:  # NaN
+                _pid = None
+            _children_by_parent.setdefault(_pid, []).append(_row["id"])
+
+        family_ids = {selected_ou_id}
+        stack = list(_children_by_parent.get(selected_ou_id, []))
+        while stack:
+            child_id = stack.pop()
+            if child_id in family_ids:
+                continue
+            family_ids.add(child_id)
+            stack.extend(_children_by_parent.get(child_id, []))
+
+        filtered_objs = filtered_objs[filtered_objs["org_unit_id"].isin(family_ids)]
 
 # Period filter, with cascade awareness:
 #   - "All periods" → show all yearly + all quarterly in the org-filtered set
