@@ -29,10 +29,17 @@ st.title("👋 About this project")
 st.markdown(
     """
     This is a personal portfolio project — a sketch in code of what an OKR
-    planning system that didn't lie to you might look like. Built to make
-    a few specific modeling decisions visible, then to show what changes
-    when those decisions are treated as first-class instead of collapsed
-    into a single "progress" bar.
+    system that respected the distinctions between delivery, impact, and
+    intent might look like. Built to make a few specific modeling decisions
+    visible, then to show what changes when those decisions are treated as
+    first-class instead of collapsed into a single "progress" bar.
+
+    It's also a small sample of what it looks like when AI tooling meets
+    the work of strategic planning and execution — a working system built at a
+    pace only possible when architecture is your job and implementation is
+    delegated to an AI collaborator. The modeling decisions and structural
+    choices are mine; the implementation velocity comes from working with
+    Claude Code as a partner rather than a code generator.
 
     The public repo has the full README, the schema, and the design
     rationale behind each decision. This app is the working artifact.
