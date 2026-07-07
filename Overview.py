@@ -162,6 +162,10 @@ with st.sidebar:
         "🌐 Demo · <a href='https://github.com/terrydougan-ai/okr-planning-app' "
         "target='_blank' style='color:#6B7280;text-decoration:underline'>"
         "view repo</a>"
+        "<br>"
+        "<span style='font-size:0.9em;color:#9CA3AF'>"
+        "Data may reset periodically"
+        "</span>"
         "</div>",
         unsafe_allow_html=True,
     )
