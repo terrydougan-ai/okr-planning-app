@@ -44,11 +44,9 @@ st.markdown(
 
     It's also a small example of what happens when AI tooling meets
     the work of strategic planning and execution. The architectural
-    calls and modeling decisions are mine; the implementation moved at
-    the pace of a real collaboration with Claude Code. Two people would
-    have been slower. **The interesting question isn't whether AI wrote
-    the code — it's what senior leaders can build when they get their
-    hours back.**
+    calls and modeling decisions are mine; Claude Code handled a lot
+    of the implementation. That's how a system with this much surface
+    area gets built in evenings and weekends.
     """
 )
 

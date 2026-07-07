@@ -567,10 +567,24 @@ st.subheader(
 )
 
 if quarterly_objs.empty:
-    st.info(
-        f"No quarterly objectives for **{selected_ou_name}** in {selected_period} "
-        "yet. Use the expander above to plan one."
-    )
+    # Distinguish: is the selected org a container (has children) or a leaf?
+    # Container orgs (company, segment) don't usually own quarterly objectives
+    # directly — their teams do. Point the user at the right place instead of
+    # implying they should plan a quarterly at the parent level.
+    child_rows = children_by_parent.get(selected_ou_id, [])
+    if child_rows:
+        _child_names = ", ".join(sorted(r["name"] for r in child_rows))
+        st.info(
+            f"No quarterly objectives at **{selected_ou_name}**'s level in "
+            f"{selected_period}. That's normal — quarterly planning usually "
+            f"happens on the teams. Try selecting one from *Working on* above: "
+            f"{_child_names}."
+        )
+    else:
+        st.info(
+            f"No quarterly objectives for **{selected_ou_name}** in "
+            f"{selected_period} yet. Use the expander above to plan one."
+        )
     st.stop()
 
 
