@@ -28,19 +28,22 @@ st.title("👋 About this project")
 
 st.markdown(
     f"""
-    I've spent a lot of my career watching planning tools flatten
-    distinctions that matter. A team reports "we're 80% done shipping"
+    I've spent a lot of my career watching planning processes and tools 
+    flatten distinctions that matter. A team reports "we're 80% done shipping"
     — but the scope quietly changed halfway through, so 80% of a smaller
     thing doesn't mean what it did last month. A dashboard reports
     "on track against our release" — but nobody notices we're nowhere
     close to the outcomes the release was supposed to drive, and often
     nobody wrote those outcomes down in the first place. Exec dashboards
-    show green while the team on the ground knows something is wrong.
+    show green while the team on the ground knows something is wrong. Or
+    Exec dashboards that highlight everything and the important things get
+    lost in the noise.
 
-    This app is my take on what an OKR system that respected the
-    distinctions between delivery, impact, and intent might look like.
-    A small, working portfolio piece — not a product — built to
-    demonstrate a specific set of modeling decisions.
+    This app is my take on what an OKR system that respects the
+    distinctions between outputs and outcomes and what might happen 
+    if delivery, impact, and intent were all important. A small, working 
+    portfolio piece — not a product — built to demonstrate a specific set
+    of modeling decisions.
 
     This has been a fun exercise for me — exploring current AI capabilities
     while designing something that fits a real need many companies have and
