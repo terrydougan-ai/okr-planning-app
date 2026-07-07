@@ -279,13 +279,13 @@ with lc2:
 
 
 # -----------------------------------------------------------------------------
-# Data disclaimer
+# Data disclaimer + invitation to explore
 # -----------------------------------------------------------------------------
 st.divider()
 st.caption(
-    "The data in this demo is **fictional** — a scenario built around "
-    "*Acme Analytics*, a made-up analytics SaaS company in mid-Q3 2026. "
-    "Any resemblance to real companies, KRs, or initiatives is coincidental. "
-    "The demo database is periodically reset, so changes made through the "
-    "app may not persist."
+    "Feel free to poke around — edit KRs, add initiatives, break things. "
+    "The data is **fictional** (a scenario built around *Acme Analytics*, "
+    "a made-up analytics SaaS company in mid-Q3 2026), and the database "
+    "is periodically reset from a versioned seed script in the repo, so "
+    "you can't break anything permanent."
 )
