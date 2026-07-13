@@ -1510,7 +1510,13 @@ for group_key in ordered_group_keys:
                                     # Business case
                                     st.markdown("**Business case**")
                                     if bc:
-                                        with st.form(f"edit_bc_{bc['initiative_id']}_{kr['id']}"):
+                                        # Note: bc_by_init was built via
+                                        # set_index("initiative_id").to_dict("index"),
+                                        # which promotes initiative_id to the OUTER
+                                        # dict key. So bc itself doesn't contain
+                                        # 'initiative_id' — but we already have it
+                                        # in the enclosing loop as init_id.
+                                        with st.form(f"edit_bc_{init_id}_{kr['id']}"):
                                             bc_summary = st.text_area(
                                                 "Summary",
                                                 value=bc.get("summary") or "",
@@ -1586,7 +1592,7 @@ for group_key in ordered_group_keys:
                                                             "actual_cost": bc_ac if bc_ac > 0 else None,
                                                             "decision": bc_decision,
                                                         }
-                                                    ).eq("initiative_id", bc["initiative_id"]).execute()
+                                                    ).eq("initiative_id", init_id).execute()
                                                     clear_cache()
                                                     st.success("Business case saved.")
                                                     st.rerun()
