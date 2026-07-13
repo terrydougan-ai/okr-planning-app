@@ -22,6 +22,9 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 
+# AI helpers — silently no-op when ANTHROPIC_API_KEY isn't configured
+from views._ai_helpers import is_ai_enabled, suggest_krs
+
 
 # -----------------------------------------------------------------------------
 # Supabase
@@ -889,31 +892,145 @@ for group_key in ordered_group_keys:
                     "button to proceed, or anywhere else to cancel."
                 )
 
+            # --- AI: Suggest KRs (only if API key is configured) ------
+            # A small, contextual "✨ Suggest KRs" button. Reads the
+            # objective title + description + team + existing KRs, asks
+            # Claude Haiku for 2-3 new KR drafts, and lets the user
+            # accept one to prefill the Add-KR form below.
+            #
+            # The user still owns the decision (accept / edit / reject).
+            # AI only accelerates the initial wording — no auto-save.
+            if is_ai_enabled():
+                _sug_key = f"kr_suggestions_{qobj['id']}"
+                _prefill_key = f"kr_prefill_{qobj['id']}"
+
+                with st.expander("✨ Suggest KRs with AI", expanded=False):
+                    st.caption(
+                        "Claude (Haiku) will read this objective's context and "
+                        "propose 2-3 draft KRs. You pick, edit, and save — "
+                        "AI just accelerates the first draft."
+                    )
+                    _sc1, _sc2 = st.columns([1, 3])
+                    with _sc1:
+                        if st.button(
+                            "✨ Generate suggestions",
+                            key=f"sug_btn_{qobj['id']}",
+                            use_container_width=True,
+                        ):
+                            with st.spinner("Thinking..."):
+                                _existing_summary = [
+                                    {
+                                        "title": kr.get("title"),
+                                        "metric_unit": kr.get("metric_unit"),
+                                        "indicator_type": kr.get("indicator_type"),
+                                    }
+                                    for _, kr in obj_krs.iterrows()
+                                ] if not obj_krs.empty else []
+                                _suggestions = suggest_krs(
+                                    objective_title=qobj["title"],
+                                    objective_description=qobj.get("description"),
+                                    team_name=selected_ou_name,
+                                    existing_krs=_existing_summary,
+                                )
+                            if _suggestions:
+                                st.session_state[_sug_key] = _suggestions
+                                st.rerun()
+                            else:
+                                st.warning(
+                                    "Couldn't generate suggestions right now. "
+                                    "Try again in a moment, or add a KR manually below."
+                                )
+
+                    # Render any suggestions in session state
+                    _current_sugs = st.session_state.get(_sug_key, [])
+                    if _current_sugs:
+                        st.markdown(
+                            "<div style='margin-top:12px;font-size:0.9em;"
+                            "color:#374151'><b>Suggestions</b> — pick one to prefill "
+                            "the Add-KR form below (you can edit before saving)."
+                            "</div>",
+                            unsafe_allow_html=True,
+                        )
+                        for _i, _sug in enumerate(_current_sugs):
+                            _ind_badge = ""
+                            if _sug.get("indicator_type") == "lagging":
+                                _ind_badge = " 🎯"
+                            elif _sug.get("indicator_type") == "leading":
+                                _ind_badge = " 📡"
+                            with st.container(border=True):
+                                st.markdown(
+                                    f"**{_sug['title']}**{_ind_badge}"
+                                )
+                                st.caption(
+                                    f"{_sug['start_value']:g} → {_sug['target_value']:g} "
+                                    f"{_sug['metric_unit']}  ·  _{_sug.get('rationale', '')}_"
+                                )
+                                if st.button(
+                                    "Use this suggestion →",
+                                    key=f"use_sug_{qobj['id']}_{_i}",
+                                ):
+                                    st.session_state[_prefill_key] = _sug
+                                    st.session_state.pop(_sug_key, None)
+                                    st.rerun()
+                        if st.button(
+                            "✕ Dismiss suggestions",
+                            key=f"dismiss_sug_{qobj['id']}",
+                        ):
+                            st.session_state.pop(_sug_key, None)
+                            st.rerun()
+
             # --- Add KR form ---
+            # Prefill from an AI suggestion (if the user accepted one above).
+            # The user can still edit any field before submit.
+            _prefill_key = f"kr_prefill_{qobj['id']}"
+            _prefill = st.session_state.get(_prefill_key, {})
+
+            # If a prefill exists, expand this form automatically so the user
+            # sees the populated fields without having to click.
+            _expand_add = obj_krs.empty or bool(_prefill)
             with st.expander(
-                f"➕ Add a Key Result", expanded=obj_krs.empty
+                f"➕ Add a Key Result", expanded=_expand_add
             ):
+                if _prefill:
+                    st.info(
+                        f"✨ Prefilled from AI suggestion: **{_prefill.get('title', '')}**. "
+                        "Edit any field, then click Add KR."
+                    )
                 with st.form(f"add_kr_{qobj['id']}", clear_on_submit=True):
                     new_kr_title = st.text_input(
                         "Title",
+                        value=_prefill.get("title", ""),
                         placeholder="e.g. Activation rate (team reaches first insight)",
                     )
                     kc1, kc2, kc3, kc4 = st.columns(4)
+                    # Pick unit index from the prefill if it matches a common unit
+                    _prefill_unit = _prefill.get("metric_unit", "")
+                    _unit_options = COMMON_UNITS + ["other"]
+                    _default_unit_idx = (
+                        _unit_options.index(_prefill_unit)
+                        if _prefill_unit in COMMON_UNITS else 0
+                    )
                     with kc1:
                         new_kr_unit = st.selectbox(
-                            "Unit", options=COMMON_UNITS + ["other"], index=0
+                            "Unit", options=_unit_options, index=_default_unit_idx
                         )
                     with kc2:
                         new_kr_start = st.number_input(
-                            "Start", value=0.0, step=1.0, format="%.2f"
+                            "Start",
+                            value=float(_prefill.get("start_value", 0) or 0),
+                            step=1.0, format="%.2f",
                         )
                     with kc3:
                         new_kr_target = st.number_input(
-                            "Target", value=100.0, step=1.0, format="%.2f"
+                            "Target",
+                            value=float(_prefill.get("target_value", 100) or 100),
+                            step=1.0, format="%.2f",
                         )
                     with kc4:
                         new_kr_current = st.number_input(
-                            "Current", value=0.0, step=1.0, format="%.2f"
+                            "Current",
+                            value=float(_prefill.get("start_value", 0) or 0),
+                            step=1.0, format="%.2f",
                         )
                     new_kr_unit_custom = ""
                     if new_kr_unit == "other":
@@ -923,10 +1040,16 @@ for group_key in ordered_group_keys:
                         placeholder="e.g. Head of Onboarding",
                         help="Who is responsible for moving this KR?",
                     )
+                    # Prefill indicator from AI suggestion if provided
+                    _prefill_ind = _prefill.get("indicator_type", "")
+                    _default_ind_idx = (
+                        INDICATOR_TYPES.index(_prefill_ind)
+                        if _prefill_ind in INDICATOR_TYPES else 0
+                    )
                     new_kr_indicator = st.selectbox(
                         "Indicator type",
                         options=INDICATOR_TYPES,
-                        index=0,
+                        index=_default_ind_idx,
                         format_func=lambda t: INDICATOR_LABELS.get(t, t),
                         help=(
                             "Lightweight tag — does this KR measure a Leading "
@@ -966,6 +1089,8 @@ for group_key in ordered_group_keys:
                                         "indicator_type": new_kr_indicator or None,
                                     }
                                 ).execute()
+                                # Clear the prefill so next time the form is blank
+                                st.session_state.pop(_prefill_key, None)
                                 clear_cache()
                                 st.success(f"Added KR **{new_kr_title}**.")
                                 st.rerun()
