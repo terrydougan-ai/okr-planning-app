@@ -39,7 +39,7 @@ about_page = st.Page(
 # Plan (workflow) pages
 annual_strategy = st.Page(
     "views/annual_strategy.py",
-    title="Annual Strategy & Objectives",
+    title="Annual Strategy",
     icon="📜",
 )
 plan_quarter = st.Page(
@@ -47,31 +47,33 @@ plan_quarter = st.Page(
     title="Plan a Quarter",
     icon="✏️",
 )
+flow = st.Page(
+    "views/flow.py",
+    title="Planning Flow",
+    icon="🌊",
+)
+
+# Check-in pages (formerly Track)
 checkins = st.Page(
     "views/key_result_updates.py",
-    title="Key Result Updates",
+    title="Key Result Check-ins",
     icon="📈",
 )
 initiative_updates = st.Page(
     "views/initiative_updates.py",
-    title="Initiative Updates",
+    title="Initiative Check-ins",
     icon="📊",
 )
 
-# View (read-only) pages
+# Executive Review (read-only) pages
 hotspots = st.Page(
     "views/hotspots.py",
     title="Hotspots",
     icon="🔥",
 )
-initiatives = st.Page(
-    "views/initiatives.py",
-    title="Initiatives",
-    icon="🚀",
-)
 summary = st.Page(
     "views/plan_narrative.py",
-    title="Plan Narrative",
+    title="Executive Narrative",
     icon="📄",
 )
 objectives = st.Page(
@@ -79,16 +81,16 @@ objectives = st.Page(
     title="Objectives & KRs",
     icon="🧭",
 )
-flow = st.Page(
-    "views/flow.py",
-    title="Plan Flow",
-    icon="🌊",
+initiatives = st.Page(
+    "views/initiatives.py",
+    title="Initiatives",
+    icon="🚀",
 )
 
-# Manage (CRUD) pages
+# Administration (CRUD) pages
 manage_org = st.Page(
     "views/manage_org_units.py",
-    title="Org Units",
+    title="Organization",
     icon="🏛️",
 )
 manage_krs_decommissioned = None  # Manage Key Results page retired; KR editing
@@ -99,7 +101,7 @@ manage_krs_decommissioned = None  # Manage Key Results page retired; KR editing
 create_initiative = st.Page(
     "views/create_initiative.py",
     title="Create Initiative",
-    icon="🚀",
+    icon="➕",
 )
 
 
@@ -110,9 +112,9 @@ nav = st.navigation(
     {
         "About": [about_page],
         "Plan": [annual_strategy, plan_quarter, flow],
-        "Track": [checkins, initiative_updates],
-        "Views": [hotspots, summary, objectives, initiatives],
-        "Manage": [manage_org, create_initiative],
+        "Check-ins": [checkins, initiative_updates],
+        "Executive Review": [hotspots, summary, objectives, initiatives],
+        "Administration": [manage_org, create_initiative],
     }
 )
 
