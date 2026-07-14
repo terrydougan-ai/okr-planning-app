@@ -95,7 +95,7 @@ def build_tree_options(org_units: pd.DataFrame, exclude_id: str | None = None):
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
-st.title("🏛️ Manage Org Units")
+st.title("🏛️ Organization")
 st.caption(
     "Create and edit the structural hierarchy: company → segment(s) → team(s). "
     "Deeper nesting works too — there's no level cap."

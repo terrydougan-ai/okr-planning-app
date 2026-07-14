@@ -96,7 +96,7 @@ def grade_color(g: float) -> str:
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
-st.title("📜 Annual Strategy & Objectives")
+st.title("📜 Annual Strategy")
 st.caption(
     "The yearly layer — strategy and big-picture objectives that don't change "
     "every quarter. Quarterly OKRs and initiatives live on **Plan a Quarter**."

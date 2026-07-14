@@ -177,3 +177,120 @@ Now generate 2-3 KRs for the objective above."""
         # The caller will show a friendly message to the user.
         print(f"[AI] suggest_krs failed: {e}")
         return None
+
+
+# -----------------------------------------------------------------------------
+# Hotspots summary
+# -----------------------------------------------------------------------------
+def summarize_hotspots(brief: dict) -> Optional[str]:
+    """Generate an executive summary of the Hotspots view using Sonnet.
+
+    Takes a pre-computed structured brief (built by the caller from the
+    Hotspots roll-up math and problem buckets) and returns a 3-5 sentence
+    prose summary suitable for the top of the Hotspots page.
+
+    The brief should be a dict shaped like:
+      {
+        "scope_label": "Acme Analytics · Q3-2026",
+        "totals": {"kr_red": 2, "kr_yellow": 3, "kr_green": 6,
+                   "init_blocked_or_off": 1, "init_at_risk": 2,
+                   "init_on_track": 5},
+        "teams": [
+          {
+            "name": "Go-to-Market",
+            "rollup_color": "🔴",
+            "red_krs": [{"title": "...", "grade": 0.25, "unit": "%"}],
+            "blocked_or_offtrack": [{"title": "ProductA Launch",
+                                      "milestone_status": "off_track",
+                                      "exec_rag": "blocked"}],
+            "at_risk": [...],
+            "past_milestone": [...],
+          },
+          ...
+        ]
+      }
+
+    Returns a string (the summary) or None on API failure.
+    """
+    client = _get_client()
+    if client is None:
+        return None
+
+    # Format the brief as compact structured text. Claude reasons well over
+    # structured text; feeding raw JSON often produces stiffer prose.
+    lines = []
+    lines.append(f"SCOPE: {brief.get('scope_label', 'unspecified')}")
+    totals = brief.get("totals", {})
+    lines.append(
+        f"TOTALS: {totals.get('kr_red', 0)} red KRs, "
+        f"{totals.get('kr_yellow', 0)} yellow, "
+        f"{totals.get('kr_green', 0)} green. "
+        f"{totals.get('init_blocked_or_off', 0)} blocked/off-track initiatives, "
+        f"{totals.get('init_at_risk', 0)} at-risk, "
+        f"{totals.get('init_on_track', 0)} on track."
+    )
+    lines.append("")
+    lines.append("PER-TEAM DETAIL:")
+    for team in brief.get("teams", []):
+        lines.append(f"\n{team['rollup_color']} {team['name']}")
+        for r in team.get("red_krs", [])[:3]:
+            lines.append(
+                f"  Red KR — {r['title']}: "
+                f"{int(r.get('grade', 0) * 100)}% to target"
+            )
+        for i in team.get("blocked_or_offtrack", [])[:3]:
+            _team_view = i.get("milestone_status") or "no team signal"
+            _exec_view = i.get("exec_rag") or "no exec signal"
+            _divergence = ""
+            if (
+                i.get("milestone_status")
+                and i.get("exec_rag")
+                and i["milestone_status"] != i["exec_rag"]
+            ):
+                _divergence = f" (team: {_team_view}, exec: {_exec_view})"
+            lines.append(
+                f"  Blocked/off-track initiative — {i['title']}{_divergence}"
+            )
+        for i in team.get("at_risk", [])[:2]:
+            lines.append(f"  At-risk initiative — {i['title']}")
+        for m in team.get("past_milestone", [])[:2]:
+            lines.append(
+                f"  Past-milestone initiative — {m['title']} "
+                f"(milestone due {m.get('due_date', '?')})"
+            )
+
+    brief_text = "\n".join(lines)
+
+    prompt = f"""You are a chief of staff writing a brief exec update on OKR execution.
+
+Below is a compact brief of the current state. Read it and write a 3-5 sentence executive summary that a busy VP could scan in 20 seconds. Prioritize: what needs attention, what's escalating, what's healthy.
+
+BRIEF:
+{brief_text}
+
+WRITING GUIDELINES:
+- Open with the most important thing — a specific concern by name, or if all healthy, say so directly.
+- Reference initiatives and KRs by their actual names. Don't say "one team" when you can say "Go-to-Market."
+- If team-view and exec-view RAG diverge on an initiative, that divergence is itself worth flagging.
+- Do not restate the brief; interpret it.
+- Do not use bullet points or headers. Prose only.
+- Do not begin with "This summary" or "In summary" or any other meta-opener.
+- Keep it under 120 words.
+- If nothing needs attention, say so plainly — "No urgent issues in this scope; healthy execution overall" style. Do NOT invent problems.
+
+Write the summary now."""
+
+    try:
+        response = client.messages.create(
+            model=MODEL_SONNET,
+            max_tokens=400,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                text += block.text
+        return text.strip() or None
+    except Exception as e:
+        print(f"[AI] summarize_hotspots failed: {e}")
+        return None

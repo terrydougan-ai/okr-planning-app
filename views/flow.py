@@ -108,7 +108,7 @@ ORPHAN_LINK_COLOR = "rgba(239, 68, 68, 0.25)"
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
-st.title("🌊 Flow")
+st.title("🌊 Planning Flow")
 st.caption(
     "The planning portfolio as a Sankey. Four layers: yearly → quarterly → "
     "KRs → initiatives. Bar widths are predicted $ value. Red nodes flag gaps."

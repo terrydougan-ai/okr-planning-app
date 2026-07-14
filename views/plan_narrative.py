@@ -191,7 +191,7 @@ def obj_status_chip(status: str) -> str:
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
-st.title("📄 Plan Narrative")
+st.title("📄 Executive Narrative")
 st.caption(
     "The plan as a document. Strategy cascades into yearly and quarterly "
     "objectives with their KRs, then every initiative in scope is listed "

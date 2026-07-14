@@ -105,7 +105,7 @@ def parse_date(v):
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
-st.title("📊 Initiative Updates")
+st.title("📊 Initiative Check-ins")
 st.caption(
     "Weekly/monthly execution reporting. Update delivery %, milestone "
     "status, exec narrative, and actual KR impact. Structural changes "

@@ -135,7 +135,7 @@ def fmt_date(ts) -> str:
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
-st.title("📈 Key Result Updates")
+st.title("📈 Key Result Check-ins")
 st.caption(
     "Update current values and add context notes for KRs. Quarterly KRs are "
     "tracked weekly; yearly aspirational KRs typically quarterly. Only "
