@@ -1,8 +1,21 @@
 # AI OKR Execution System
 
-A Streamlit + Supabase app for planning and tracking OKRs across a multi-team org. Built to be honest about the parts of OKR practice that most tools fudge: separating delivery from impact, leading from lagging indicators, exec-facing signal from team-internal status.
+A Streamlit + Supabase app for planning, tracking, and reviewing OKRs across a multi-team org, with Claude layered in for KR drafting, exec summaries, and check-in coaching. Built to be honest about the parts of OKR practice that most tools fudge: separating delivery from impact, leading from lagging indicators, exec-facing signal from team-internal status.
 
 > ⚠️ This is a personal portfolio project — it works, but it isn't a hardened product. The repo is public so the modeling decisions are visible to anyone interested in how I think about cross-functional planning systems.
+
+---
+
+## Three problems this app addresses
+
+**Connect work to outcomes, and outcomes to strategy.**
+Teams do work. Leaders set goals. But too often the connection between them is implicit, verbal, or lost in the gap between project trackers and OKR tools. This app treats the chain — strategy → yearly objective → quarterly objective → KR → initiative — as first-class, visible on every page. An initiative names which KRs it moves and by how much (predicted). Later, retrospective attribution names what actually moved (actual). The through-line stays visible.
+
+**Give leaders a focused view of what matters, not a firehose of data.**
+Executive dashboards drown people in numbers when what they need is *judgment about where to look*. Hotspots reads the same underlying data an operational team looks at, and produces an AI-generated summary at the top: three sentences on what needs attention, what's escalating, what's healthy. The dashboard is still there below — but you don't have to work through it to know where to focus.
+
+**Coach the frontline on writing updates that actually help.**
+Having spent years reading status updates from project and product managers, I know the pattern: a busy PM writes a vague "on track" or a generic "some blockers," and a leader has to reply with clarifying questions to get the picture. The AI check-in review takes an update and scores it against Clarity, Consistency, Completeness, and Realism — flagging the things a leader would ask, before the leader has to ask. Cheaper than a back-and-forth. More generous than a rejection.
 
 ---
 
@@ -76,39 +89,53 @@ The schema retains `parent_key_result_id` and `contribution_weight` columns as l
 
 An initiative's owning team and the KR(s) it moves are independent. A platform team can run an initiative that moves a revenue team's KR — that's the right model for cross-functional work. The `initiative.org_unit_id` field captures ownership separately from the KR linkage.
 
+### AI is a coaching partner, not a decision-maker
+
+Claude (Sonnet and Haiku) is layered into specific, scoped moments in the workflow. Not open-ended chat — targeted assistance at the writing and reviewing surfaces. The app uses Claude for:
+
+- **Suggesting KR drafts** on Plan a Quarter (given an objective's context, propose 2–3 measurable KRs)
+- **Summarizing Hotspots** for exec review (a 3–5 sentence brief on top of the org-health cards)
+- **Reviewing check-in updates** on Initiative and Key Result check-in pages (scored against Clarity / Consistency / Completeness / Realism, with a verdict: Ready to send · Needs sharpening · Rework recommended)
+
+The AI accelerates first drafts and surfaces issues a busy leader might miss. The human owns every decision that ends up in the plan.
+
 ---
 
 ## Pages
 
-The app is organized into four sections in the sidebar:
+The app is organized into five sections in the sidebar:
+
+### About
+- **👋 About this project** — landing page for demo visitors
 
 ### Plan
-- **📜 Annual Strategy & Objectives** — strategies, yearly objectives, aspirational KRs
-- **✏️ Plan a Quarter** — the primary working surface; quarterly objectives, KRs, initiatives, predicted impact, business cases
-- **🌊 Plan Flow** — Sankey visualization of the cascade (strategy → yearly → quarterly → KR → initiative) with barycentric ordering to minimize ribbon crossings
+- **📜 Annual Strategy** — strategies, yearly objectives, aspirational KRs
+- **✏️ Plan a Quarter** — the primary working surface; quarterly objectives, KRs, initiatives, predicted impact, business cases. Includes **✨ Suggest KRs with AI** on each objective
+- **🌊 Planning Flow** — Sankey visualization of the cascade (strategy → yearly → quarterly → KR → initiative) with barycentric ordering to minimize ribbon crossings
 
-### Track
-- **📈 Key Result Updates** — weekly check-ins, current values + notes, history per KR
-- **📊 Initiative Updates** — execution updates, milestone status, exec RAG, exec narrative, actual impact
+### Check-ins
+- **📈 Key Result Check-ins** — weekly value updates, notes, history per KR. Includes **✨ Ask AI to review this check-in**
+- **📊 Initiative Check-ins** — execution updates, milestone status, exec RAG, exec narrative, actual impact. Includes **✨ Ask AI to review this update** with persisted results and staleness detection
 
-### Views
-- **🔥 Hotspots** — operational "what needs my attention?" view. Each org gets a color-coded card with rolled-up health; click *Show specifics* to expand the card inline and see that team's specific problems (red KRs, blocked initiatives, planning gaps, overdue milestones)
-- **📄 Plan Narrative** — read-the-plan-as-prose top to bottom; structured cascade with indented hierarchy
+### Executive Review
+- **🔥 Hotspots** — operational "what needs my attention?" view. Each org gets a color-coded card with rolled-up health; expand the card to see that team's specific problems (red KRs, blocked initiatives, planning gaps, overdue milestones). An **✨ AI-generated summary** sits at the top with a 3–5 sentence exec brief
+- **📄 Executive Narrative** — read-the-plan-as-prose top to bottom; structured cascade with indented hierarchy
 - **🧭 Objectives & KRs** — KR-centric view with linked initiatives as supporting tables (the causal cascade, KR by KR)
 - **🚀 Initiatives** — read-only portfolio view of initiatives, grouped by owning team, sorted with problems at top
 
-### Manage
-- **🏛️ Org Units** — team / segment / company hierarchy
-- **🚀 Create Initiative** — structural editing of initiatives (title, owner, status, effort, linked KRs, business case)
+### Administration
+- **🏛️ Organization** — team / segment / company hierarchy
+- **➕ Create Initiative** — structural editing of initiatives (title, owner, status, effort, linked KRs, business case)
 
 ---
 
 ## Tech stack
 
 - **Frontend:** Streamlit (Python). Multi-page navigation, custom HTML/CSS where I needed visual punch
-- **Database:** Supabase (Postgres), accessed via the service-role key with app-enforced per-user scoping (no Row Level Security — kept the model simple for a single-user portfolio app)
+- **Database:** Supabase (Postgres), accessed via the service-role key with app-enforced scoping (no Row Level Security — kept the model simple for a single-user portfolio app)
 - **Language:** Python 3.11+, with pandas for data manipulation
-- **Visualization:** Plotly for the Plan Flow Sankey
+- **AI:** Anthropic's Claude API. Haiku for structured writing (KR suggestions); Sonnet for evaluation and summarization (Hotspots summary, check-in reviews). Prompts return JSON so the app can render results as structured UI, not free-form chat
+- **Visualization:** Plotly for the Planning Flow Sankey; inline SVG for the framework diagram on About
 
 I built this iteratively in multi-hour sessions using Claude Code (Anthropic's CLI agent) for implementation work. The architectural decisions, modeling choices, and feature scoping were mine; the implementation was Claude-assisted. Treat it as a sketch of judgment + delegation, not "wrote it all from scratch."
 
@@ -154,9 +181,10 @@ The schema lives in `/schema/`:
 ## What this is deliberately NOT
 
 - **Not a multi-tenant production tool.** Single-user app with no auth layer; the service-role Supabase key is used directly. Fine for a portfolio app, not fine for real use.
-- **Not "feature-complete."** Some pages have backlog items I haven't gotten to (e.g., time-series visualizations on Key Result Updates — needs ~6+ weeks of check-in data accumulated first to be worth building).
+- **Not "feature-complete."** Some pages have backlog items I haven't gotten to (e.g., time-series visualizations on Key Result Check-ins — needs ~6+ weeks of check-in data accumulated first to be worth building).
 - **Not a polished product UI.** Streamlit's design vocabulary is what it is. I cared about getting the *model* right, not making it look like Notion.
 - **Not opinionated about OKR cadence.** The app supports quarterly and yearly horizons but doesn't enforce a particular framework (CFRs, OKR-Vital-Signs, etc.) — it's deliberately a substrate, not a methodology.
+- **Not a general-purpose AI assistant.** No open-ended chat surface. The AI features are scoped to specific writing and review moments — suggest KRs, summarize Hotspots, review a check-in — with structured outputs the app renders as UI. Each surface has a rubric or output schema the model works against, not a blank prompt.
 
 ---
 
