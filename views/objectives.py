@@ -108,6 +108,38 @@ def grade_color(g: float) -> str:
 st.title("🎯 Objectives & Key Results")
 st.caption("The cascade made visible: org unit → objectives → KRs → initiatives.")
 
+# Page-level CSS to tighten Streamlit's default vertical spacing on this
+# page specifically. Streamlit's block containers add ~1rem of margin
+# between elements which is generous for prose but too airy for a
+# scannable KR listing where the reader wants density.
+#
+# The selectors target Streamlit's block-container children AND common
+# widget outputs. If Streamlit's DOM changes in a future version, these
+# may need updating.
+st.markdown("""
+<style>
+/* Reduce the gap between elements inside expanders */
+[data-testid="stExpanderDetails"] > div > div {
+    gap: 0.35rem !important;
+}
+/* Tighten paragraph margins (st.markdown outputs) */
+[data-testid="stExpanderDetails"] p {
+    margin-top: 0.1rem !important;
+    margin-bottom: 0.1rem !important;
+}
+/* Tighten the caption elements */
+[data-testid="stExpanderDetails"] [data-testid="stCaptionContainer"] {
+    margin-top: 0.15rem !important;
+    margin-bottom: 0.15rem !important;
+}
+/* Progress bar padding */
+[data-testid="stExpanderDetails"] [data-testid="stProgress"] {
+    padding-top: 0.1rem !important;
+    padding-bottom: 0.35rem !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 try:
     data = load_all()
 except Exception as e:
@@ -283,12 +315,17 @@ for _, obj in visible_objectives.iterrows():
             unit = kr.get("metric_unit") or ""
             parent_kr = kr_by_id.get(kr.get("parent_key_result_id"))
 
-            # KR title row — grade dot + title + inline % (no separate metric
-            # widget). Keeps the top of each KR block to one line instead of
-            # a two-column layout that added ~60px of vertical padding.
+            # Title + inline percentage + inline numeric line, all in one
+            # markdown block. Fewer separate calls = fewer margins to fight.
+            _start = kr.get("start_value")
+            _current = kr.get("current_value")
+            _target = kr.get("target_value")
             st.markdown(
                 f"{grade_color(grade)} **{kr['title']}** "
-                f"<span style='color:#6B7280'>· {grade:.0%} to goal</span>",
+                f"<span style='color:#6B7280'>· {grade:.0%} to goal</span><br>"
+                f"<span style='color:#9CA3AF;font-size:0.85em'>"
+                f"Start {_start} → Current <b>{_current}</b> → Target {_target} {unit}"
+                f"</span>",
                 unsafe_allow_html=True,
             )
             if parent_kr:
@@ -304,12 +341,6 @@ for _, obj in visible_objectives.iterrows():
                     f"  ·  under *{parent_obj_name}*"
                 )
 
-            # Numeric line + progress bar (compact, no widget padding)
-            st.caption(
-                f"Start {kr.get('start_value')} → Current "
-                f"**{kr.get('current_value')}** → Target {kr.get('target_value')} "
-                f"{unit}"
-            )
             st.progress(grade)
 
             # Initiatives moving this KR
