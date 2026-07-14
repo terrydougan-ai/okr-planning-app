@@ -695,7 +695,13 @@ def compute_initiative_signature(update: dict) -> str:
 
 
 def compute_kr_checkin_signature(checkin: dict) -> str:
-    """Signature for a KR check-in. The value + note are the material inputs."""
+    """Signature for a KR check-in — the value + note are the material inputs.
+
+    NOTE: currently unused. KR check-in reviews are session-only (not
+    persisted to the DB) because a KR check-in note is ephemeral. This
+    helper is kept for symmetry with the initiative signature and in case
+    a future design (e.g. attaching reviews to check_in rows) needs it.
+    """
     return _signature_for({
         "new_value": checkin.get("new_value"),
         "note": checkin.get("note"),
