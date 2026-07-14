@@ -17,7 +17,7 @@ import streamlit as st
 
 
 REPO_URL = "https://github.com/terrydougan-ai/okr-planning-app"
-LINKEDIN_URL = "https://www.linkedin.com/in/terry-dougan-0aa8565/"
+LINKEDIN_URL = "https://www.linkedin.com/in/terrydougan/"
 PROFILE_REPO_URL = "https://github.com/terrydougan-ai"
 
 
@@ -28,22 +28,22 @@ st.title("👋 About this project")
 
 st.markdown(
     f"""
-    I've spent a lot of my career watching planning processes and tools 
-    flatten distinctions that matter. A team reports "we're 80% done shipping"
-    — but the scope quietly changed halfway through, so 80% of a smaller
-    thing doesn't mean what it did last month. A dashboard reports
-    "on track against our release" — but nobody notices we're nowhere
-    close to the outcomes the release was supposed to drive, and often
-    nobody wrote those outcomes down in the first place. Exec dashboards
-    show green while the team on the ground knows something is wrong. Or
-    Exec dashboards that highlight everything and the important things get
-    lost in the noise.
+    I've spent a lot of my career watching planning processes and tools
+    flatten distinctions that matter. A team reports "we're 80% done
+    shipping" — but the scope quietly changed halfway through, so today's
+    80% isn't yesterday's 80%. A dashboard reports "on track against our
+    release" — but nobody notices we're nowhere close to the outcomes the
+    release was supposed to drive. Exec dashboards show green while the
+    team on the ground knows something is wrong — or the opposite: they
+    highlight everything, so what actually matters gets buried in the
+    noise. A PM writes "on track, some risks" and a leader has to ask
+    three follow-ups to find out which risks and what the mitigation
+    actually looks like.
 
-    This app is my take on what an OKR system that respects the
-    distinctions between outputs and outcomes and what might happen 
-    if delivery, impact, and intent were all important. A small, working 
-    portfolio piece — not a product — built to demonstrate a specific set
-    of modeling decisions.
+    This app is my take on what an OKR system that respected the
+    distinctions between delivery, impact, and intent might look like —
+    built around three specific problems I've watched break down in
+    practice.
 
     This has been a fun exercise for me — exploring current AI capabilities
     while designing something that fits a real need many companies have and
@@ -52,6 +52,43 @@ st.markdown(
     on the implementation. Send me your feedback via [LinkedIn]({LINKEDIN_URL})
     — I'm always looking to improve, and eager to learn about your use cases
     and how something like this might address them.
+    """
+)
+
+
+# -----------------------------------------------------------------------------
+# Three problems this app addresses
+# -----------------------------------------------------------------------------
+st.divider()
+st.subheader("Three problems this app addresses")
+
+st.markdown(
+    """
+    **Connect work to outcomes, and outcomes to strategy.**
+    Teams do work. Leaders set goals. But too often the connection between
+    them is implicit, verbal, or lost in the gap between project trackers
+    and OKR tools. This app treats the chain — strategy → yearly objective
+    → quarterly objective → KR → initiative — as first-class, visible on
+    every page. An initiative names which KRs it moves and by how much
+    (predicted). Later, retrospective attribution names what actually
+    moved (actual). The through-line stays visible.
+
+    **Give leaders a focused view of what matters, not a firehose of data.**
+    Executive dashboards drown people in numbers when what they need is
+    *judgment about where to look*. Hotspots reads the same underlying
+    data an operational team looks at, and produces an AI-generated
+    summary at the top: three sentences on what needs attention, what's
+    escalating, what's healthy. The dashboard is still there below — but
+    you don't have to work through it to know where to focus.
+
+    **Coach the frontline on writing updates that actually help.**
+    Having spent years reading status updates from project and product
+    managers, I know the pattern: a busy PM writes a vague "on track" or
+    a generic "some blockers," and a leader has to reply with clarifying
+    questions to get the picture. The AI check-in review takes an update
+    and scores it against Clarity, Consistency, Completeness, and Realism
+    — flagging the things a leader would ask, before the leader has to
+    ask. Cheaper than a back-and-forth. More generous than a rejection.
     """
 )
 
@@ -195,7 +232,7 @@ components.html(FRAMEWORK_SVG, height=480, scrolling=False)
 
 
 # -----------------------------------------------------------------------------
-# The design thesis — five distilled decisions
+# The design thesis — the distilled modeling decisions
 # -----------------------------------------------------------------------------
 st.divider()
 st.subheader("The specific modeling decisions")
@@ -227,6 +264,13 @@ st.markdown(
     platform team can run an initiative that moves a revenue team's KR.
     That's the right model for cross-functional work, and the schema
     treats team ownership and KR contribution as independent relationships.
+
+    **AI is layered as a coaching partner, not a decision-maker.** The app
+    uses Claude Sonnet and Haiku for specific, scoped moments — suggesting
+    KR drafts on the planning surface, summarizing Hotspots for exec review,
+    and reviewing PM check-ins against a Clarity / Consistency /
+    Completeness / Realism rubric. The AI accelerates the work; the human
+    still owns every decision that ends up in the plan.
     """
 )
 
@@ -243,8 +287,9 @@ st.markdown(
 
     - **🔥 Hotspots** shows how the modeling produces a triage view — each
       team's health rolled up as a card, expandable to show the specific
-      problems that need attention. Note the exec-vs-team divergence
-      surfaced inline where they disagree.
+      problems that need attention. At the top, an **✨ AI-generated summary**
+      reads the same data and produces a three-sentence exec brief. Note
+      the exec-vs-team divergence surfaced inline where they disagree.
 
     - **🧭 Objectives & KRs** shows the causal cascade, KR by KR — each
       Key Result renders with its supporting initiatives as a small table
@@ -253,6 +298,14 @@ st.markdown(
 
     Plan Flow, Plan Narrative, and the Initiatives page give three different
     reads on the same data: a Sankey, a document, and a portfolio view.
+
+    On **✏️ Plan a Quarter**, each objective has an **✨ Suggest KRs**
+    button that asks Claude to propose two or three draft KRs given the
+    objective's context. On **📊 Initiative Check-ins** and **📈 Key
+    Result Check-ins**, each update has an **✨ Ask AI to review this
+    update** section — Claude scores the check-in against Clarity,
+    Consistency, Completeness, and Realism and returns a verdict
+    (Ready to send · Needs sharpening · Rework recommended).
     """
 )
 
