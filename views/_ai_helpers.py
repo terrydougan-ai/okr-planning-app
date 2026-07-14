@@ -370,6 +370,7 @@ Return ONLY a JSON object. No prose, no markdown, no code fences.
 
 Structure:
 {{
+  "verdict": "ready_to_send" | "needs_sharpening" | "rework_recommended",
   "categories": [
     {{"name": "Clarity", "observations": ["..."]}},
     {{"name": "Consistency", "observations": ["..."]}},
@@ -378,6 +379,11 @@ Structure:
   ],
   "overall": "one sentence, under 20 words"
 }}
+
+VERDICT RUBRIC (apply strictly):
+- "ready_to_send" — no observations across categories, OR only one minor wording nudge. The update reads cleanly to a busy VP.
+- "needs_sharpening" — 2–3 observations, none of them fundamental. Update is usable but would be stronger with a pass.
+- "rework_recommended" — 4+ observations, OR a fundamental inconsistency (status conflicts with narrative), OR the exec narrative is empty on a struggling initiative, OR the update misses information a VP will immediately ask about.
 
 RULES:
 - Each observation must be actionable — the PM should know what to do next.
@@ -426,7 +432,13 @@ Now write the review."""
                 valid_categories.append({"name": name, "observations": obs})
 
         overall = str(parsed.get("overall", "")).strip()
+        verdict = str(parsed.get("verdict", "")).strip().lower()
+        # Normalize to one of the three known values; empty string means
+        # AI omitted it (renderer handles that gracefully).
+        if verdict not in ("ready_to_send", "needs_sharpening", "rework_recommended"):
+            verdict = ""
         return {
+            "verdict": verdict,
             "categories": valid_categories,
             "overall": overall,
         }
@@ -506,6 +518,7 @@ Return ONLY a JSON object.
 
 Structure:
 {{
+  "verdict": "ready_to_send" | "needs_sharpening" | "rework_recommended",
   "categories": [
     {{"name": "Clarity", "observations": ["..."]}},
     {{"name": "Signal", "observations": ["..."]}}
@@ -513,10 +526,15 @@ Structure:
   "overall": "one sentence, under 20 words"
 }}
 
+VERDICT RUBRIC (apply strictly):
+- "ready_to_send" — the note names what happened and reads the trend; no observations, or only one minor wording nudge.
+- "needs_sharpening" — 1–2 observations. The note is usable but a small clarification would help a reader.
+- "rework_recommended" — the note is empty or generic ("Good week"), OR a material value change is unexplained, OR the update misses signal a leader would want.
+
 RULES:
 - Each observation actionable — the team lead should know what to add or change.
 - Empty observations arrays for categories with no issues — do NOT invent problems.
-- If the note is empty, say so directly under Clarity.
+- If the note is empty, say so directly under Clarity and set verdict to "rework_recommended".
 - Do NOT open with praise.
 - Reference the actual values where useful (e.g. "the +12 jump from last week isn't explained").
 - Keep each observation under 30 words.
@@ -559,7 +577,11 @@ Now write the review."""
                 valid_categories.append({"name": name, "observations": obs})
 
         overall = str(parsed.get("overall", "")).strip()
+        verdict = str(parsed.get("verdict", "")).strip().lower()
+        if verdict not in ("ready_to_send", "needs_sharpening", "rework_recommended"):
+            verdict = ""
         return {
+            "verdict": verdict,
             "categories": valid_categories,
             "overall": overall,
         }
@@ -580,7 +602,27 @@ def render_review(review: dict) -> None:
     if not review:
         return
 
-    # Overall line (one-liner) up top
+    # Verdict badge at the very top — a single actionable label so the PM
+    # knows at a glance whether to ship, sharpen, or rework the update.
+    # Colors and icons stay OFF the traditional RAG palette (green/yellow/red)
+    # so the verdict doesn't get confused with the app's initiative/KR RAG.
+    verdict = review.get("verdict", "")
+    verdict_labels = {
+        "ready_to_send":       ("✅", "Ready to send", "#065F46", "#D1FAE5"),
+        "needs_sharpening":    ("✏️", "Needs sharpening", "#92400E", "#FEF3C7"),
+        "rework_recommended":  ("🔁", "Rework recommended", "#7C2D12", "#FED7AA"),
+    }
+    if verdict in verdict_labels:
+        icon, label, fg, bg = verdict_labels[verdict]
+        st.markdown(
+            f"<div style='display:inline-block;padding:6px 12px;"
+            f"background:{bg};color:{fg};border-radius:6px;"
+            f"font-weight:600;font-size:0.95em;margin-bottom:10px'>"
+            f"{icon} {label}</div>",
+            unsafe_allow_html=True,
+        )
+
+    # Overall line (one-liner) below the verdict
     overall = review.get("overall", "").strip()
     if overall:
         st.markdown(
