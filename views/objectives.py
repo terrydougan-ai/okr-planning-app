@@ -283,30 +283,28 @@ for _, obj in visible_objectives.iterrows():
             unit = kr.get("metric_unit") or ""
             parent_kr = kr_by_id.get(kr.get("parent_key_result_id"))
 
-            # KR header row
-            col_a, col_b = st.columns([3, 1])
-            with col_a:
-                st.markdown(f"{grade_color(grade)} **{kr['title']}**")
-                if parent_kr:
-                    parent_obj_name = obj_by_id.get(parent_kr["objective_id"], {}).get(
-                        "title", ""
-                    )
-                    weight = kr.get("contribution_weight")
-                    weight_str = (
-                        f" (weight {weight:.2f})" if weight is not None else ""
-                    )
-                    st.caption(
-                        f"↑ rolls up to: *{parent_kr['title']}*{weight_str} "
-                        f"  ·  under *{parent_obj_name}*"
-                    )
-            with col_b:
-                st.metric(
-                    label="Progress",
-                    value=f"{grade:.0%}",
-                    label_visibility="collapsed",
+            # KR title row — grade dot + title + inline % (no separate metric
+            # widget). Keeps the top of each KR block to one line instead of
+            # a two-column layout that added ~60px of vertical padding.
+            st.markdown(
+                f"{grade_color(grade)} **{kr['title']}** "
+                f"<span style='color:#6B7280'>· {grade:.0%} to goal</span>",
+                unsafe_allow_html=True,
+            )
+            if parent_kr:
+                parent_obj_name = obj_by_id.get(parent_kr["objective_id"], {}).get(
+                    "title", ""
+                )
+                weight = kr.get("contribution_weight")
+                weight_str = (
+                    f" (weight {weight:.2f})" if weight is not None else ""
+                )
+                st.caption(
+                    f"↑ rolls up to: *{parent_kr['title']}*{weight_str} "
+                    f"  ·  under *{parent_obj_name}*"
                 )
 
-            # Numeric line
+            # Numeric line + progress bar (compact, no widget padding)
             st.caption(
                 f"Start {kr.get('start_value')} → Current "
                 f"**{kr.get('current_value')}** → Target {kr.get('target_value')} "
@@ -340,5 +338,3 @@ for _, obj in visible_objectives.iterrows():
                     )
                 else:
                     st.caption("_No initiatives attached to this KR yet._")
-
-            st.write("")  # small spacer between KRs
