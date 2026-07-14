@@ -102,6 +102,17 @@ def grade_color(g: float) -> str:
     return "🔴"
 
 
+def grade_hex(g: float) -> str:
+    """Hex color matched to grade_color, for inline text emphasis.
+    Chosen to be legible against a white background — deeper than the emoji
+    dots but not aggressive."""
+    if g >= 0.7:
+        return "#059669"  # emerald-600
+    if g >= 0.4:
+        return "#D97706"  # amber-600
+    return "#DC2626"      # red-600
+
+
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
@@ -293,9 +304,26 @@ for _, obj in visible_objectives.iterrows():
     with st.expander(header, expanded=True):
         if obj.get("description"):
             st.caption(obj["description"])
-        st.caption(
-            f"Owner: {obj.get('owner') or '—'}  ·  Status: {obj.get('status') or '—'}"
+        # Only surface owner or status when they carry real signal.
+        # "active" is the default status and doesn't add information; the
+        # dash "—" for missing owner is noise. Skip both when they'd just
+        # be filler.
+        _owner_val = obj.get("owner")
+        _owner_str = (
+            _owner_val if isinstance(_owner_val, str) and _owner_val.strip() else None
         )
+        _status_val = obj.get("status")
+        _status_str = (
+            _status_val if isinstance(_status_val, str) and _status_val.strip()
+            and _status_val != "active" else None
+        )
+        _parts = []
+        if _owner_str:
+            _parts.append(f"Owner: {_owner_str}")
+        if _status_str:
+            _parts.append(f"Status: {_status_str}")
+        if _parts:
+            st.caption("  ·  ".join(_parts))
 
         # KRs for this objective
         obj_krs = (
@@ -315,14 +343,18 @@ for _, obj in visible_objectives.iterrows():
             unit = kr.get("metric_unit") or ""
             parent_kr = kr_by_id.get(kr.get("parent_key_result_id"))
 
-            # Title + inline percentage + inline numeric line, all in one
-            # markdown block. Fewer separate calls = fewer margins to fight.
+            # Title + prominent percentage + numeric line, all one markdown
+            # block. The percentage is enlarged and color-matched to the
+            # grade so it becomes the visual scan anchor.
             _start = kr.get("start_value")
             _current = kr.get("current_value")
             _target = kr.get("target_value")
+            _pct_color = grade_hex(grade)
             st.markdown(
                 f"{grade_color(grade)} **{kr['title']}** "
-                f"<span style='color:#6B7280'>· {grade:.0%} to goal</span><br>"
+                f"<span style='color:{_pct_color};font-weight:700;"
+                f"font-size:1.15em'>· {grade:.0%}</span>"
+                f"<span style='color:#6B7280'> to goal</span><br>"
                 f"<span style='color:#9CA3AF;font-size:0.85em'>"
                 f"Start {_start} → Current <b>{_current}</b> → Target {_target} {unit}"
                 f"</span>",
