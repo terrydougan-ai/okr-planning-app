@@ -297,33 +297,34 @@ for _, obj in visible_objectives.iterrows():
         f" — ↑ aligns to: *{parent_obj['title']}*" if parent_obj else ""
     )
 
+    # Put owner into the header line itself (when set) so we don't need a
+    # separate caption row below. Status is only surfaced when non-default.
+    _obj_owner_val = obj.get("owner")
+    _obj_owner_str = (
+        _obj_owner_val if isinstance(_obj_owner_val, str) and _obj_owner_val.strip()
+        else None
+    )
+    _obj_status_val = obj.get("status")
+    _obj_status_str = (
+        _obj_status_val if isinstance(_obj_status_val, str)
+        and _obj_status_val.strip() and _obj_status_val != "active"
+        else None
+    )
+    _header_meta = []
+    if _obj_owner_str:
+        _header_meta.append(f"Owner: {_obj_owner_str}")
+    if _obj_status_str:
+        _header_meta.append(f"Status: {_obj_status_str}")
+    _header_meta_str = f" · {' · '.join(_header_meta)}" if _header_meta else ""
+
     header = (
-        f"**{org_name} · {obj['period']}** — {obj['title']}{parent_note}"
+        f"**{org_name} · {obj['period']}**{_header_meta_str} — "
+        f"{obj['title']}{parent_note}"
     )
 
     with st.expander(header, expanded=True):
         if obj.get("description"):
             st.caption(obj["description"])
-        # Only surface owner or status when they carry real signal.
-        # "active" is the default status and doesn't add information; the
-        # dash "—" for missing owner is noise. Skip both when they'd just
-        # be filler.
-        _owner_val = obj.get("owner")
-        _owner_str = (
-            _owner_val if isinstance(_owner_val, str) and _owner_val.strip() else None
-        )
-        _status_val = obj.get("status")
-        _status_str = (
-            _status_val if isinstance(_status_val, str) and _status_val.strip()
-            and _status_val != "active" else None
-        )
-        _parts = []
-        if _owner_str:
-            _parts.append(f"Owner: {_owner_str}")
-        if _status_str:
-            _parts.append(f"Status: {_status_str}")
-        if _parts:
-            st.caption("  ·  ".join(_parts))
 
         # KRs for this objective
         obj_krs = (
@@ -343,34 +344,43 @@ for _, obj in visible_objectives.iterrows():
             unit = kr.get("metric_unit") or ""
             parent_kr = kr_by_id.get(kr.get("parent_key_result_id"))
 
-            # Title + prominent percentage + numeric line, all one markdown
-            # block. The percentage is enlarged and color-matched to the
-            # grade so it becomes the visual scan anchor.
+            # Two-column layout: title on the left, percentage + numeric
+            # summary on the right. Collapses three vertical lines into one
+            # row, using horizontal whitespace that was previously empty.
             _start = kr.get("start_value")
             _current = kr.get("current_value")
             _target = kr.get("target_value")
             _pct_color = grade_hex(grade)
-            st.markdown(
-                f"{grade_color(grade)} **{kr['title']}** "
-                f"<span style='color:{_pct_color};font-weight:700;"
-                f"font-size:1.15em'>· {grade:.0%}</span>"
-                f"<span style='color:#6B7280'> to goal</span><br>"
-                f"<span style='color:#9CA3AF;font-size:0.85em'>"
-                f"Start {_start} → Current <b>{_current}</b> → Target {_target} {unit}"
-                f"</span>",
-                unsafe_allow_html=True,
-            )
-            if parent_kr:
-                parent_obj_name = obj_by_id.get(parent_kr["objective_id"], {}).get(
-                    "title", ""
+
+            kr_left, kr_right = st.columns([65, 35])
+            with kr_left:
+                st.markdown(
+                    f"{grade_color(grade)} **{kr['title']}**",
+                    unsafe_allow_html=True,
                 )
-                weight = kr.get("contribution_weight")
-                weight_str = (
-                    f" (weight {weight:.2f})" if weight is not None else ""
-                )
-                st.caption(
-                    f"↑ rolls up to: *{parent_kr['title']}*{weight_str} "
-                    f"  ·  under *{parent_obj_name}*"
+                if parent_kr:
+                    parent_obj_name = obj_by_id.get(
+                        parent_kr["objective_id"], {}
+                    ).get("title", "")
+                    weight = kr.get("contribution_weight")
+                    weight_str = (
+                        f" (weight {weight:.2f})" if weight is not None else ""
+                    )
+                    st.caption(
+                        f"↑ rolls up to: *{parent_kr['title']}*{weight_str} "
+                        f"  ·  under *{parent_obj_name}*"
+                    )
+            with kr_right:
+                st.markdown(
+                    f"<div style='text-align:right;line-height:1.3'>"
+                    f"<span style='color:{_pct_color};font-weight:700;"
+                    f"font-size:1.35em'>{grade:.0%}</span>"
+                    f"<span style='color:#6B7280;font-size:0.85em'> to goal</span>"
+                    f"<br>"
+                    f"<span style='color:#9CA3AF;font-size:0.8em'>"
+                    f"{_start} → <b>{_current}</b> → {_target} {unit}"
+                    f"</span></div>",
+                    unsafe_allow_html=True,
                 )
 
             st.progress(grade)
