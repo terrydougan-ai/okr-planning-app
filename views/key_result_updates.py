@@ -27,7 +27,12 @@ import pandas as pd
 from supabase import create_client, Client
 
 # AI helpers — silently no-op when ANTHROPIC_API_KEY isn't configured
-from views._ai_helpers import is_ai_enabled, review_kr_checkin, render_review
+from views._ai_helpers import (
+    is_ai_enabled,
+    review_kr_checkin,
+    render_review,
+    compute_kr_checkin_signature,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -459,8 +464,36 @@ def render_kr_box(kr):
         # Reads the CURRENT typed values (new_value, note_value) rather than
         # what's saved — this way a team lead can iterate on the wording
         # before committing to Save all.
+        #
+        # The latest review persists to the key_result row. Signature includes
+        # both value and note, so re-typing the note invalidates the review.
         if is_ai_enabled():
             _kr_review_key = f"kr_review_{kr_id}"
+
+            _current_kr_sig = compute_kr_checkin_signature({
+                "new_value": new_value,
+                "note": note_value.strip(),
+            })
+
+            _kr_saved_review = kr.get("latest_ai_review")
+            _kr_saved_at = kr.get("latest_ai_review_at")
+            _kr_saved_sig = kr.get("latest_ai_review_signature")
+
+            if isinstance(_kr_saved_review, float) and pd.isna(_kr_saved_review):
+                _kr_saved_review = None
+            if _kr_saved_review and isinstance(_kr_saved_review, str):
+                try:
+                    import json as _json
+                    _kr_saved_review = _json.loads(_kr_saved_review)
+                except Exception:
+                    _kr_saved_review = None
+
+            _kr_is_stale = (
+                _kr_saved_review is not None
+                and _kr_saved_sig is not None
+                and _kr_saved_sig != _current_kr_sig
+            )
+
             with st.expander("✨ Ask AI to review this check-in", expanded=False):
                 st.caption(
                     "Claude Sonnet will look at the new value, the note, and "
@@ -469,8 +502,9 @@ def render_kr_box(kr):
                 )
                 _krc1, _krc2 = st.columns([1, 3])
                 with _krc1:
+                    _kr_btn_label = "🔄 Regenerate" if _kr_saved_review else "✨ Review"
                     if st.button(
-                        "✨ Review",
+                        _kr_btn_label,
                         key=f"kr_review_btn_{kr_id}_{scope_key}",
                         use_container_width=True,
                     ):
@@ -496,6 +530,16 @@ def render_kr_box(kr):
                         with st.spinner("Reviewing..."):
                             _review = review_kr_checkin(_checkin_pkg)
                         if _review:
+                            try:
+                                sb.table("key_result").update({
+                                    "latest_ai_review": _review,
+                                    "latest_ai_review_at": "now()",
+                                    "latest_ai_review_signature": _current_kr_sig,
+                                }).eq("id", kr_id).execute()
+                                # No cache clear here — this page reloads on
+                                # every action anyway via its own patterns.
+                            except Exception as e:
+                                print(f"[AI] Save KR review failed: {e}")
                             st.session_state[_kr_review_key] = _review
                             st.rerun()
                         else:
@@ -503,10 +547,21 @@ def render_kr_box(kr):
                                 "Couldn't generate a review right now. Try again in a moment."
                             )
 
-                _cached_kr_review = st.session_state.get(_kr_review_key)
-                if _cached_kr_review:
+                if _kr_saved_review:
                     st.markdown("---")
-                    render_review(_cached_kr_review)
+                    if _kr_is_stale:
+                        st.warning(
+                            "⚠ **Review is stale** — the value or note has "
+                            "changed since this review was generated. "
+                            "Regenerate for current feedback."
+                        )
+                    if _kr_saved_at:
+                        try:
+                            _at_str = pd.to_datetime(_kr_saved_at).strftime("%b %d, %Y · %I:%M %p")
+                            st.caption(f"_Latest review: {_at_str}_")
+                        except Exception:
+                            pass
+                    render_review(_kr_saved_review)
 
         # History disclosure (collapsed by default)
         history_df = _kr_check_in_history(kr_id, limit=5)

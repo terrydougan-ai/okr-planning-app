@@ -27,7 +27,12 @@ from datetime import date
 from supabase import create_client, Client
 
 # AI helpers — silently no-op when ANTHROPIC_API_KEY isn't configured
-from views._ai_helpers import is_ai_enabled, review_initiative_update, render_review
+from views._ai_helpers import (
+    is_ai_enabled,
+    review_initiative_update,
+    render_review,
+    compute_initiative_signature,
+)
 
 
 # Display vocabulary — the four RAG-ish states for delivery health.
@@ -471,8 +476,46 @@ for _, init in visible_sorted.iterrows():
         # Sits OUTSIDE the form (buttons inside a form act as submit buttons).
         # Reads the last-saved values from the DB, so PMs get feedback on what
         # they've just saved — treats "save then review" as the natural flow.
+        #
+        # The latest review is persisted to the initiative row (see Phase 9).
+        # If the update has changed since the review was generated, a
+        # "stale" warning appears prompting a regenerate.
         if is_ai_enabled():
             _review_key = f"init_review_{init_id}"
+
+            # Compute the CURRENT signature of the saved update
+            _current_signature = compute_initiative_signature({
+                "status": init.get("status"),
+                "milestone_status": init.get("milestone_status"),
+                "exec_rag": init.get("exec_rag"),
+                "progress_pct": init.get("progress_pct"),
+                "next_milestone_text": init.get("next_milestone_text"),
+                "next_milestone_date": init.get("next_milestone_date"),
+                "exec_narrative": init.get("exec_narrative"),
+            })
+
+            # Load saved review from the DB row (populated on generation)
+            _saved_review = init.get("latest_ai_review")
+            _saved_at = init.get("latest_ai_review_at")
+            _saved_sig = init.get("latest_ai_review_signature")
+
+            # Pandas may return NaN for missing JSONB — normalize to None
+            if isinstance(_saved_review, float) and pd.isna(_saved_review):
+                _saved_review = None
+            if _saved_review and isinstance(_saved_review, str):
+                # Some clients return JSONB as a JSON string
+                try:
+                    import json as _json
+                    _saved_review = _json.loads(_saved_review)
+                except Exception:
+                    _saved_review = None
+
+            _is_stale = (
+                _saved_review is not None
+                and _saved_sig is not None
+                and _saved_sig != _current_signature
+            )
+
             with st.expander("✨ Ask AI to review this update", expanded=False):
                 st.caption(
                     "Claude Sonnet will read the whole update — status, "
@@ -482,8 +525,9 @@ for _, init in visible_sorted.iterrows():
                 )
                 _rc1, _rc2 = st.columns([1, 3])
                 with _rc1:
+                    _btn_label = "🔄 Regenerate" if _saved_review else "✨ Review"
                     if st.button(
-                        "✨ Review",
+                        _btn_label,
                         key=f"review_btn_{init_id}",
                         use_container_width=True,
                     ):
@@ -515,18 +559,41 @@ for _, init in visible_sorted.iterrows():
                         with st.spinner("Reviewing..."):
                             _review = review_initiative_update(_update_pkg)
                         if _review:
-                            st.session_state[_review_key] = _review
+                            # Persist to the initiative row
+                            try:
+                                sb.table("initiative").update({
+                                    "latest_ai_review": _review,
+                                    "latest_ai_review_at": "now()",
+                                    "latest_ai_review_signature": _current_signature,
+                                }).eq("id", init_id).execute()
+                                clear_cache()
+                            except Exception as e:
+                                # Save failed — still show the review in-session
+                                # so the PM isn't blocked. Log for debugging.
+                                print(f"[AI] Save review failed: {e}")
                             st.rerun()
                         else:
                             st.warning(
                                 "Couldn't generate a review right now. Try again in a moment."
                             )
 
-                # Render cached review, if any
-                _cached_review = st.session_state.get(_review_key)
-                if _cached_review:
+                # Show the saved review, if any. Add a "stale" warning if the
+                # update has changed since the review was written.
+                if _saved_review:
                     st.markdown("---")
-                    render_review(_cached_review)
+                    if _is_stale:
+                        st.warning(
+                            "⚠ **Review is stale** — the update has changed "
+                            "since this review was generated. Regenerate for "
+                            "current feedback."
+                        )
+                    if _saved_at:
+                        try:
+                            _at_str = pd.to_datetime(_saved_at).strftime("%b %d, %Y · %I:%M %p")
+                            st.caption(f"_Latest review: {_at_str}_")
+                        except Exception:
+                            pass
+                    render_review(_saved_review)
 
         # Delivery progress bar (visualization of what's stored)
         st.progress((init.get("progress_pct") or 0) / 100)

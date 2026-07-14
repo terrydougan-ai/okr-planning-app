@@ -662,3 +662,41 @@ def render_review(review: dict) -> None:
         "_Feedback from Claude Sonnet. Not a substitute for peer review or "
         "manager feedback — for real judgment on strategy, still talk to your leader._"
     )
+
+
+# -----------------------------------------------------------------------------
+# Signature — used for staleness detection
+# -----------------------------------------------------------------------------
+import hashlib
+
+
+def _signature_for(payload: dict) -> str:
+    """Deterministic hash of the review's input payload. When the payload
+    changes (e.g. PM edits the narrative), the signature changes — the UI
+    compares this to the stored signature to detect stale reviews."""
+    # json.dumps with sort_keys guarantees the same payload → same hash
+    # regardless of insertion order. default=str safely handles dates.
+    normalized = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+
+def compute_initiative_signature(update: dict) -> str:
+    """Signature for an initiative update. Only fields the review reasons over
+    are included — so unrelated changes (e.g. created_at) don't invalidate."""
+    return _signature_for({
+        "status": update.get("status"),
+        "milestone_status": update.get("milestone_status"),
+        "exec_rag": update.get("exec_rag"),
+        "progress_pct": update.get("progress_pct"),
+        "next_milestone_text": update.get("next_milestone_text"),
+        "next_milestone_date": str(update.get("next_milestone_date") or ""),
+        "exec_narrative": update.get("exec_narrative"),
+    })
+
+
+def compute_kr_checkin_signature(checkin: dict) -> str:
+    """Signature for a KR check-in. The value + note are the material inputs."""
+    return _signature_for({
+        "new_value": checkin.get("new_value"),
+        "note": checkin.get("note"),
+    })
