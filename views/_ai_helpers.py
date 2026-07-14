@@ -348,7 +348,7 @@ def review_initiative_update(update: dict) -> Optional[dict]:
 Read the update below as a package. Check for:
 - CLARITY: Is the narrative specific enough that a busy VP would understand the situation? Or is it vague ("making progress", "some blockers")?
 - CONSISTENCY: Do the fields agree? For example: if delivery is at 40% and status is "on track", does the narrative explain that pace? If exec_rag is worse than milestone_status, does the narrative explain the divergence? If the milestone date has passed, was the status updated?
-- COMPLETENESS: For a struggling initiative (not on-track), did the PM explain why AND describe a mitigation plan? For a healthy initiative, did they still note what could put it at risk? Are the questions a VP would ask actually addressed?
+- COMPLETENESS: For a struggling initiative (not on-track), did the PM explain why AND describe a mitigation plan or at least the plan to get a mitigation plan? For a healthy initiative, did they still note what could put it at risk? Are the questions a VP would ask actually addressed?
 - REALISM: Do the numbers hold up? Is 100% delivery plausible given the status? Is a 5-day-away milestone realistic given progress? Is the KR impact claim (via progress) even remotely on the trajectory needed to hit target?
 
 INITIATIVE CONTEXT:
