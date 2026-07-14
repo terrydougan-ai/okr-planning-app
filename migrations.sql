@@ -1,5 +1,5 @@
 -- ============================================================================
--- OKR Planning App — incremental migration history
+-- AI OKR Execution System — incremental migration history
 -- ============================================================================
 -- This file is the CHRONOLOGICAL HISTORY of schema changes during
 -- development. It's here so the evolution of the data model is visible:
@@ -113,36 +113,3 @@ alter table initiative add column org_unit_id uuid references org_unit(id) on de
 
 alter table strategy add column fiscal_year integer;
 update strategy set fiscal_year = 2026 where fiscal_year is null;
-
-
--- ----------------------------------------------------------------------------
--- Phase 9: AI review persistence
--- ----------------------------------------------------------------------------
--- Store the LATEST AI review inline on the parent record. Timestamp for
--- display; signature (hash of reviewed content) for staleness detection —
--- when the underlying update changes after the review was written, the
--- UI shows a "stale — regenerate" warning.
---
--- Only ONE review is stored per entity. Regeneration overwrites. History
--- across time is deliberately not kept here — a proper ai_review history
--- table can be added later without affecting these columns.
---
--- Design outcome: the initiative columns are actively used. The key_result
--- columns are LATENT INFRASTRUCTURE — added at the same time on the
--- assumption both entities needed the same treatment, but a KR check-in
--- note is ephemeral (written once, saved to a check_in history row, form
--- field returns to empty). Persisting a KR review to the parent row would
--- make it look stale on every page load — there's no "current" note to
--- compare against. KR reviews are therefore session-only in the app.
--- The columns stay in place as harmless latent capacity in case a future
--- design (e.g. attach reviews to check_in rows) uses them, but they will
--- not be populated by current app code.
-
-alter table initiative add column if not exists latest_ai_review jsonb;
-alter table initiative add column if not exists latest_ai_review_at timestamptz;
-alter table initiative add column if not exists latest_ai_review_signature text;
-
--- (Latent — not populated by current app code; see comment above.)
-alter table key_result add column if not exists latest_ai_review jsonb;
-alter table key_result add column if not exists latest_ai_review_at timestamptz;
-alter table key_result add column if not exists latest_ai_review_signature text;

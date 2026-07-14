@@ -1,4 +1,4 @@
-# OKR Planning App
+# AI OKR Execution System
 
 A Streamlit + Supabase app for planning and tracking OKRs across a multi-team org. Built to be honest about the parts of OKR practice that most tools fudge: separating delivery from impact, leading from lagging indicators, exec-facing signal from team-internal status.
 

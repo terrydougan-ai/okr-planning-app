@@ -1,5 +1,5 @@
 """
-OKR Planning App — entry point and navigation router.
+AI OKR Execution System — entry point and navigation router.
 
 This file does ONE thing: it defines the sidebar navigation structure and hands
 off to whichever page is selected. The actual page content lives in `views/`.
@@ -19,7 +19,7 @@ import streamlit as st
 
 # Global page config — applies to every page in the app.
 st.set_page_config(
-    page_title="OKR Planning",
+    page_title="AI OKR Execution System",
     page_icon="🎯",
     layout="wide",
 )
