@@ -92,7 +92,11 @@ create table key_result (
     indicator_type              text,                           -- 'lagging' / 'leading' / NULL
     parent_key_result_id        uuid references key_result(id) on delete set null,
     contribution_weight         numeric,
-    -- AI review persistence (Phase 9). See migrations.sql for rationale.
+    -- AI review persistence (Phase 9). LATENT — not populated by current
+    -- app code. KR check-in notes are ephemeral, so persisting a review
+    -- to the parent row would look stale on every page load. KR reviews
+    -- live in session state instead. Columns kept in place as harmless
+    -- latent capacity; see migrations.sql for the full rationale.
     latest_ai_review            jsonb,
     latest_ai_review_at         timestamptz,
     latest_ai_review_signature  text,
