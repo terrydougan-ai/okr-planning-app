@@ -26,6 +26,9 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 
+# AI helpers — silently no-op when ANTHROPIC_API_KEY isn't configured
+from views._ai_helpers import is_ai_enabled, review_kr_checkin, render_review
+
 
 # -----------------------------------------------------------------------------
 # Supabase
@@ -451,6 +454,59 @@ def render_kr_box(kr):
             }
         elif kr_id in pending:
             del pending[kr_id]
+
+        # --- AI review of this KR check-in ------------------------------
+        # Reads the CURRENT typed values (new_value, note_value) rather than
+        # what's saved — this way a team lead can iterate on the wording
+        # before committing to Save all.
+        if is_ai_enabled():
+            _kr_review_key = f"kr_review_{kr_id}"
+            with st.expander("✨ Ask AI to review this check-in", expanded=False):
+                st.caption(
+                    "Claude Sonnet will look at the new value, the note, and "
+                    "recent history — and tell you whether the note reads "
+                    "the trend or just reports a number."
+                )
+                _krc1, _krc2 = st.columns([1, 3])
+                with _krc1:
+                    if st.button(
+                        "✨ Review",
+                        key=f"kr_review_btn_{kr_id}_{scope_key}",
+                        use_container_width=True,
+                    ):
+                        # Build recent history package
+                        _hist_df = _kr_check_in_history(kr_id, limit=5)
+                        _recent_history = []
+                        for _, _r in _hist_df.iterrows():
+                            _recent_history.append({
+                                "value": _r.get("value"),
+                                "note": _r.get("note"),
+                                "when": fmt_date(_r.get("created_at")),
+                            })
+                        _checkin_pkg = {
+                            "kr_title": kr.get("title", "?"),
+                            "unit": unit,
+                            "start": start,
+                            "target": target,
+                            "previous_value": stored_current,
+                            "new_value": new_value,
+                            "recent_history": _recent_history,
+                            "note": note_value.strip(),
+                        }
+                        with st.spinner("Reviewing..."):
+                            _review = review_kr_checkin(_checkin_pkg)
+                        if _review:
+                            st.session_state[_kr_review_key] = _review
+                            st.rerun()
+                        else:
+                            st.warning(
+                                "Couldn't generate a review right now. Try again in a moment."
+                            )
+
+                _cached_kr_review = st.session_state.get(_kr_review_key)
+                if _cached_kr_review:
+                    st.markdown("---")
+                    render_review(_cached_kr_review)
 
         # History disclosure (collapsed by default)
         history_df = _kr_check_in_history(kr_id, limit=5)

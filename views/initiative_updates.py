@@ -26,6 +26,9 @@ import pandas as pd
 from datetime import date
 from supabase import create_client, Client
 
+# AI helpers — silently no-op when ANTHROPIC_API_KEY isn't configured
+from views._ai_helpers import is_ai_enabled, review_initiative_update, render_review
+
 
 # Display vocabulary — the four RAG-ish states for delivery health.
 # Stored in DB as the keys below; rendered as the friendlier labels.
@@ -463,6 +466,67 @@ for _, init in visible_sorted.iterrows():
                     st.rerun()
                 except Exception as e:
                     st.error(f"Save failed: {e}")
+
+        # --- AI review of this initiative check-in --------------------------
+        # Sits OUTSIDE the form (buttons inside a form act as submit buttons).
+        # Reads the last-saved values from the DB, so PMs get feedback on what
+        # they've just saved — treats "save then review" as the natural flow.
+        if is_ai_enabled():
+            _review_key = f"init_review_{init_id}"
+            with st.expander("✨ Ask AI to review this update", expanded=False):
+                st.caption(
+                    "Claude Sonnet will read the whole update — status, "
+                    "milestone, narrative, delivery % — and give you feedback "
+                    "on Clarity, Consistency, Completeness, and Realism. "
+                    "The AI reads what's saved, so save your edits first."
+                )
+                _rc1, _rc2 = st.columns([1, 3])
+                with _rc1:
+                    if st.button(
+                        "✨ Review",
+                        key=f"review_btn_{init_id}",
+                        use_container_width=True,
+                    ):
+                        # Build the update package for the AI
+                        _linked_krs_for_ai = []
+                        for _, _lk in init_links.iterrows():
+                            _kr_row = key_results[key_results["id"] == _lk["key_result_id"]]
+                            if not _kr_row.empty:
+                                _kr = _kr_row.iloc[0]
+                                _linked_krs_for_ai.append({
+                                    "title": _kr.get("title", "?"),
+                                    "unit": _kr.get("metric_unit", ""),
+                                    "current": _kr.get("current_value"),
+                                    "target": _kr.get("target_value"),
+                                })
+                        _update_pkg = {
+                            "title": init.get("title"),
+                            "description": init.get("description"),
+                            "status": init.get("status"),
+                            "milestone_status": init.get("milestone_status"),
+                            "exec_rag": init.get("exec_rag"),
+                            "progress_pct": init.get("progress_pct") or 0,
+                            "next_milestone_text": init.get("next_milestone_text"),
+                            "next_milestone_date": str(init.get("next_milestone_date") or ""),
+                            "exec_narrative": init.get("exec_narrative"),
+                            "linked_krs": _linked_krs_for_ai,
+                            "effort_estimate": init.get("effort_estimate"),
+                        }
+                        with st.spinner("Reviewing..."):
+                            _review = review_initiative_update(_update_pkg)
+                        if _review:
+                            st.session_state[_review_key] = _review
+                            st.rerun()
+                        else:
+                            st.warning(
+                                "Couldn't generate a review right now. Try again in a moment."
+                            )
+
+                # Render cached review, if any
+                _cached_review = st.session_state.get(_review_key)
+                if _cached_review:
+                    st.markdown("---")
+                    render_review(_cached_review)
 
         # Delivery progress bar (visualization of what's stored)
         st.progress((init.get("progress_pct") or 0) / 100)

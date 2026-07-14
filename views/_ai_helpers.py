@@ -294,3 +294,329 @@ Write the summary now."""
     except Exception as e:
         print(f"[AI] summarize_hotspots failed: {e}")
         return None
+
+
+# -----------------------------------------------------------------------------
+# Initiative check-in review
+# -----------------------------------------------------------------------------
+def review_initiative_update(update: dict) -> Optional[dict]:
+    """Review a PM's initiative check-in for quality.
+
+    Reads the whole update as a package — the AI's job is to spot
+    inconsistencies BETWEEN fields (e.g. exec_rag says "on track" but the
+    narrative flags customer risk) as much as issues WITHIN any single
+    field. Returns structured feedback under four categories:
+      * Clarity — is the narrative specific and readable?
+      * Consistency — do the status, RAG, %, and narrative agree with each other?
+      * Completeness — did the PM address the things a leader would ask about?
+      * Realism — do the numbers and dates hold up?
+
+    `update` should be a dict with at least these keys (missing keys OK):
+      title, description, status, milestone_status, exec_rag,
+      progress_pct, next_milestone_text, next_milestone_date,
+      exec_narrative, linked_krs (list of {title, unit, current, target}),
+      effort_estimate.
+
+    Returns a dict:
+      {
+        "categories": [
+          {"name": "Consistency", "observations": ["...", "..."]},
+          ...
+        ],
+        "overall": "one-line summary of the update's health"
+      }
+    Or None on API failure.
+    """
+    client = _get_client()
+    if client is None:
+        return None
+
+    # Format the update as compact structured text
+    linked_krs_txt = ""
+    for kr in update.get("linked_krs", []) or []:
+        _cur = kr.get("current")
+        _tgt = kr.get("target")
+        linked_krs_txt += (
+            f"\n  - {kr.get('title', '?')}: current {_cur}, target {_tgt} "
+            f"{kr.get('unit', '')}"
+        )
+    if not linked_krs_txt:
+        linked_krs_txt = "\n  (none linked)"
+
+    prompt = f"""You are an experienced chief of staff reviewing a project manager's initiative check-in. Your job: give the PM concrete, constructive feedback on the quality of their update. Not a rewrite — feedback they can act on.
+
+Read the update below as a package. Check for:
+- CLARITY: Is the narrative specific enough that a busy VP would understand the situation? Or is it vague ("making progress", "some blockers")?
+- CONSISTENCY: Do the fields agree? For example: if delivery is at 40% and status is "on track", does the narrative explain that pace? If exec_rag is worse than milestone_status, does the narrative explain the divergence? If the milestone date has passed, was the status updated?
+- COMPLETENESS: For a struggling initiative (not on-track), did the PM explain why AND describe a mitigation plan? For a healthy initiative, did they still note what could put it at risk? Are the questions a VP would ask actually addressed?
+- REALISM: Do the numbers hold up? Is 100% delivery plausible given the status? Is a 5-day-away milestone realistic given progress? Is the KR impact claim (via progress) even remotely on the trajectory needed to hit target?
+
+INITIATIVE CONTEXT:
+Title: {update.get('title', '?')}
+Description: {update.get('description', '(none)')}
+Effort estimate: {update.get('effort_estimate', 'unspecified')}
+Linked KRs:{linked_krs_txt}
+
+CURRENT CHECK-IN VALUES:
+Status: {update.get('status', 'unspecified')}
+Milestone status (team view): {update.get('milestone_status', 'not set')}
+Exec RAG (exec-facing view): {update.get('exec_rag', 'not set')}
+Delivery progress: {update.get('progress_pct', 0)}%
+Next milestone text: {update.get('next_milestone_text', '(not set)')}
+Next milestone date: {update.get('next_milestone_date', '(not set)')}
+Exec narrative: {update.get('exec_narrative', '(empty)')}
+
+Return ONLY a JSON object. No prose, no markdown, no code fences.
+
+Structure:
+{{
+  "categories": [
+    {{"name": "Clarity", "observations": ["..."]}},
+    {{"name": "Consistency", "observations": ["..."]}},
+    {{"name": "Completeness", "observations": ["..."]}},
+    {{"name": "Realism", "observations": ["..."]}}
+  ],
+  "overall": "one sentence, under 20 words"
+}}
+
+RULES:
+- Each observation must be actionable — the PM should know what to do next.
+- If a category has no issues, use an empty observations array — do NOT invent problems.
+- Do NOT congratulate. Do NOT open with "Great job" or "This is well-written."
+- Reference the actual field values by name where relevant.
+- Keep each observation under 30 words.
+- Overall should be neutral if no major issues, direct if there are.
+
+Now write the review."""
+
+    try:
+        response = client.messages.create(
+            model=MODEL_SONNET,
+            max_tokens=800,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw_text = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                raw_text += block.text
+
+        cleaned = raw_text.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.split("\n")
+            cleaned = "\n".join(lines[1:-1]) if len(lines) > 2 else cleaned
+
+        parsed = json.loads(cleaned)
+        if not isinstance(parsed, dict):
+            return None
+
+        # Validate shape
+        categories = parsed.get("categories", [])
+        if not isinstance(categories, list):
+            categories = []
+        valid_categories = []
+        for cat in categories:
+            if not isinstance(cat, dict):
+                continue
+            name = str(cat.get("name", "")).strip()
+            obs = cat.get("observations", [])
+            if not isinstance(obs, list):
+                obs = []
+            obs = [str(o).strip() for o in obs if str(o).strip()]
+            if name:
+                valid_categories.append({"name": name, "observations": obs})
+
+        overall = str(parsed.get("overall", "")).strip()
+        return {
+            "categories": valid_categories,
+            "overall": overall,
+        }
+
+    except Exception as e:
+        print(f"[AI] review_initiative_update failed: {e}")
+        return None
+
+
+# -----------------------------------------------------------------------------
+# KR check-in review
+# -----------------------------------------------------------------------------
+def review_kr_checkin(checkin: dict) -> Optional[dict]:
+    """Review a KR check-in (value + optional note) for quality.
+
+    Simpler than the initiative review — a KR check-in only has two fields
+    of substance: the new value, and the note. So the evaluation focuses on:
+      * Clarity — does the note actually say what happened?
+      * Signal — does the note read the trend, or just report a number?
+
+    `checkin` should be a dict:
+      kr_title, unit, previous_value, new_value, target, start,
+      recent_history (list of prior check-in values with optional notes),
+      note (the new note being written)
+
+    Returns:
+      {
+        "categories": [{"name": ..., "observations": [...]}, ...],
+        "overall": "one sentence"
+      }
+    Or None on API failure.
+    """
+    client = _get_client()
+    if client is None:
+        return None
+
+    history_txt = ""
+    for h in checkin.get("recent_history", []) or []:
+        _v = h.get("value")
+        _n = h.get("note") or "(no note)"
+        _t = h.get("when", "")
+        history_txt += f"\n  {_t}: {_v} — {_n}"
+    if not history_txt:
+        history_txt = "\n  (no prior check-ins)"
+
+    prev_v = checkin.get("previous_value")
+    new_v = checkin.get("new_value")
+    delta_str = ""
+    try:
+        if prev_v is not None and new_v is not None:
+            delta = float(new_v) - float(prev_v)
+            delta_str = f"Change from previous: {delta:+g}"
+    except (TypeError, ValueError):
+        pass
+
+    prompt = f"""You are an experienced chief of staff reviewing a Key Result check-in written by a team lead. Give concrete, constructive feedback on the quality of the check-in note.
+
+Check for:
+- CLARITY: Does the note actually say what happened? Or is it filler like "Good week" / "Making progress"? A useful KR note names what moved the number (or didn't).
+- SIGNAL: Does the note read the trend, or just report a number? If the KR jumped or dipped materially, does the note explain the driver? If the KR is flat, does the note acknowledge it?
+
+KR CONTEXT:
+Title: {checkin.get('kr_title', '?')}
+Unit: {checkin.get('unit', '')}
+Start value: {checkin.get('start')}
+Target value: {checkin.get('target')}
+Previous value: {prev_v}
+NEW value being logged: {new_v}
+{delta_str}
+
+Recent check-in history (oldest first):{history_txt}
+
+NEW NOTE BEING WRITTEN:
+"{checkin.get('note', '') or '(empty note)'}"
+
+Return ONLY a JSON object.
+
+Structure:
+{{
+  "categories": [
+    {{"name": "Clarity", "observations": ["..."]}},
+    {{"name": "Signal", "observations": ["..."]}}
+  ],
+  "overall": "one sentence, under 20 words"
+}}
+
+RULES:
+- Each observation actionable — the team lead should know what to add or change.
+- Empty observations arrays for categories with no issues — do NOT invent problems.
+- If the note is empty, say so directly under Clarity.
+- Do NOT open with praise.
+- Reference the actual values where useful (e.g. "the +12 jump from last week isn't explained").
+- Keep each observation under 30 words.
+
+Now write the review."""
+
+    try:
+        response = client.messages.create(
+            model=MODEL_SONNET,
+            max_tokens=500,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw_text = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                raw_text += block.text
+
+        cleaned = raw_text.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.split("\n")
+            cleaned = "\n".join(lines[1:-1]) if len(lines) > 2 else cleaned
+
+        parsed = json.loads(cleaned)
+        if not isinstance(parsed, dict):
+            return None
+
+        categories = parsed.get("categories", [])
+        if not isinstance(categories, list):
+            categories = []
+        valid_categories = []
+        for cat in categories:
+            if not isinstance(cat, dict):
+                continue
+            name = str(cat.get("name", "")).strip()
+            obs = cat.get("observations", [])
+            if not isinstance(obs, list):
+                obs = []
+            obs = [str(o).strip() for o in obs if str(o).strip()]
+            if name:
+                valid_categories.append({"name": name, "observations": obs})
+
+        overall = str(parsed.get("overall", "")).strip()
+        return {
+            "categories": valid_categories,
+            "overall": overall,
+        }
+
+    except Exception as e:
+        print(f"[AI] review_kr_checkin failed: {e}")
+        return None
+
+
+# -----------------------------------------------------------------------------
+# Shared rendering — used by both initiative check-in review and KR check-in
+# review so the visual treatment is consistent across pages.
+# -----------------------------------------------------------------------------
+def render_review(review: dict) -> None:
+    """Render a review result inline. Small, understated — the review is
+    supplementary to the PM's own work, not a takeover of the page.
+    Call within a Streamlit container/expander for best framing."""
+    if not review:
+        return
+
+    # Overall line (one-liner) up top
+    overall = review.get("overall", "").strip()
+    if overall:
+        st.markdown(
+            f"<div style='color:#1F2937;font-size:0.95em;margin-bottom:12px'>"
+            f"<b>Overall:</b> {overall}</div>",
+            unsafe_allow_html=True,
+        )
+
+    # Categories with observations. Categories with EMPTY observations still
+    # render — they signal "this dimension looked fine" without inventing filler.
+    for cat in review.get("categories", []):
+        name = cat.get("name", "").strip()
+        obs = cat.get("observations", [])
+        if not name:
+            continue
+        if not obs:
+            st.markdown(
+                f"<div style='color:#374151;font-size:0.9em;margin-top:8px'>"
+                f"<b>{name}:</b> "
+                f"<span style='color:#6B7280'>looks fine</span></div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                f"<div style='color:#374151;font-size:0.9em;margin-top:8px'>"
+                f"<b>{name}</b></div>",
+                unsafe_allow_html=True,
+            )
+            for o in obs:
+                st.markdown(
+                    f"<div style='color:#4B5563;font-size:0.9em;"
+                    f"margin-left:12px'>• {o}</div>",
+                    unsafe_allow_html=True,
+                )
+
+    st.caption(
+        "_Feedback from Claude Sonnet. Not a substitute for peer review or "
+        "manager feedback — for real judgment on strategy, still talk to your leader._"
+    )
