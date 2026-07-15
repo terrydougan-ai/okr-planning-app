@@ -55,6 +55,15 @@ insert into strategy (id, org_unit_id, title, description, fiscal_year, status) 
     'Become the default analytics platform for mid-market data teams by combining best-in-class onboarding, technical reliability, and a high-value pipeline of design partners.',
     2026,
     'active'
+  ),
+  -- Strategy 2 — the AI-native bet (added alongside the platform strategy)
+  (
+    'b0000000-0000-0000-0000-000000000002',
+    'a0000000-0000-0000-0000-000000000001',
+    'Become the AI-native analytics platform for mid-market',
+    'Two parallel bets: (a) ship AI-augmented workflows customers pay for — starting with the AI query assistant, then expanding across core workflows; (b) operate as an AI-native team ourselves, measured in hours saved per FTE and cycle-time reduction. Aggressive on both angles — competitors who wait a year will be a year behind on both product and operating leverage.',
+    2026,
+    'active'
   );
 
 
@@ -82,6 +91,28 @@ insert into objective (id, org_unit_id, strategy_id, parent_objective_id, period
     'FY2026',
     'Operate with the reliability and pace expected of a platform we want analysts to depend on',
     'COO',
+    'active'
+  ),
+  -- Company yearly under Strategy 2 (AI-native, product angle)
+  (
+    'c0000000-0000-0000-0000-000000000003',
+    'a0000000-0000-0000-0000-000000000001',
+    'b0000000-0000-0000-0000-000000000002',
+    null,
+    'FY2026',
+    'AI capabilities are core to how customers use Acme — not features on the side',
+    'CEO',
+    'active'
+  ),
+  -- Company yearly under Strategy 2 (AI-native, operating angle)
+  (
+    'c0000000-0000-0000-0000-000000000004',
+    'a0000000-0000-0000-0000-000000000001',
+    'b0000000-0000-0000-0000-000000000002',
+    null,
+    'FY2026',
+    'Acme teams operate AI-native — measurable, not aspirational',
+    'Chief of Staff',
     'active'
   );
 
@@ -125,6 +156,64 @@ insert into key_result (id, objective_id, title, metric_unit, start_value, targe
     24, 12, 16,
     'VP Platform',
     'lagging'
+  ),
+
+  -- Yearly KRs under Strategy 2 · Objective 2A (product-angle)
+  (
+    'd0000000-0000-0000-0000-000000000005',
+    'c0000000-0000-0000-0000-000000000003',
+    'Paid accounts with an AI-feature monthly active user',
+    '%',
+    12, 60, 22,
+    'VP Product',
+    'lagging'
+  ),
+  (
+    'd0000000-0000-0000-0000-000000000006',
+    'c0000000-0000-0000-0000-000000000003',
+    'Median time-to-first-insight for new signups',
+    'min',
+    42, 18, 34,
+    'VP Product',
+    'lagging'
+  ),
+  (
+    'd0000000-0000-0000-0000-000000000007',
+    'c0000000-0000-0000-0000-000000000003',
+    'AI-augmented workflow adoption (weekly sessions per paid account)',
+    'count',
+    0.4, 3.0, 0.9,
+    'VP Product',
+    'leading'
+  ),
+
+  -- Yearly KRs under Strategy 2 · Objective 2B (operating-angle)
+  (
+    'd0000000-0000-0000-0000-000000000008',
+    'c0000000-0000-0000-0000-000000000004',
+    'Median hours saved per FTE per week via AI-augmented workflows',
+    'hours',
+    1.0, 5.0, 2.2,
+    'Chief of Staff',
+    'lagging'
+  ),
+  (
+    'd0000000-0000-0000-0000-000000000009',
+    'c0000000-0000-0000-0000-000000000004',
+    'Teams reaching AI Maturity Level 3+ on internal scale',
+    '%',
+    0, 70, 15,
+    'Chief of Staff',
+    'lagging'
+  ),
+  (
+    'd0000000-0000-0000-0000-000000000010',
+    'c0000000-0000-0000-0000-000000000004',
+    'Engineering PR cycle time (median, end-to-end)',
+    'hours',
+    42, 18, 34,
+    'VP Engineering',
+    'leading'
   );
 
 
@@ -189,6 +278,41 @@ insert into objective (id, org_unit_id, strategy_id, parent_objective_id, period
     'Q3-2026',
     'Existing customers expand their usage of the platform',
     'VP Product',
+    'active'
+  ),
+  -- Quarterly objective under Strategy 2 · Y2A — Product AI (Q3-2A)
+  (
+    'e0000000-0000-0000-0000-000000000006',
+    'a0000000-0000-0000-0000-000000000002',
+    'b0000000-0000-0000-0000-000000000002',
+    'c0000000-0000-0000-0000-000000000003',
+    'Q3-2026',
+    'Ship the first AI-augmented workflow a real customer would pay for',
+    'VP Product',
+    'active'
+  ),
+  -- Quarterly objective under Strategy 2 · Y2B — Engineering AI-native (Q3-2B)
+  (
+    'e0000000-0000-0000-0000-000000000007',
+    'a0000000-0000-0000-0000-000000000004',
+    'b0000000-0000-0000-0000-000000000002',
+    'c0000000-0000-0000-0000-000000000004',
+    'Q3-2026',
+    'Get Engineering to AI-native baseline; instrument the rest of the org',
+    'VP Engineering',
+    'active'
+  ),
+  -- Quarterly objective under Strategy 2 · Y2B — Company-level measurement (Q3-2C).
+  -- Owned at the company level because CoS orchestrates cross-team work.
+  -- Also exercises the app's ability to hold company-level quarterly objectives.
+  (
+    'e0000000-0000-0000-0000-000000000008',
+    'a0000000-0000-0000-0000-000000000001',
+    'b0000000-0000-0000-0000-000000000002',
+    'c0000000-0000-0000-0000-000000000004',
+    'Q3-2026',
+    'Establish the measurement infrastructure for AI ROI',
+    'Chief of Staff',
     'active'
   );
 
@@ -306,6 +430,66 @@ insert into key_result (id, objective_id, title, metric_unit, start_value, targe
     3.2, 5.5, 4.1,
     'Head of Product Growth',
     'leading'
+  ),
+
+  -- KRs under Q3-2A (Product AI: ship first AI-augmented workflow)
+  (
+    'f0000000-0000-0000-0000-000000000012',
+    'e0000000-0000-0000-0000-000000000006',
+    'AI query assistant active design-partner customers (using 3+ times/week)',
+    'count',
+    0, 15, 4,
+    'VP Product',
+    'leading'
+  ),
+  (
+    'f0000000-0000-0000-0000-000000000013',
+    'e0000000-0000-0000-0000-000000000006',
+    'Time-to-first-insight dashboard published and reported weekly',
+    'count',
+    0, 1, 0,
+    'VP Product',
+    'lagging'
+  ),
+
+  -- KRs under Q3-2B (Engineering AI-native)
+  (
+    'f0000000-0000-0000-0000-000000000014',
+    'e0000000-0000-0000-0000-000000000007',
+    'Engineers using AI-assisted code review weekly',
+    '%',
+    30, 80, 52,
+    'VP Engineering',
+    'leading'
+  ),
+  (
+    'f0000000-0000-0000-0000-000000000015',
+    'e0000000-0000-0000-0000-000000000007',
+    'Engineering PR cycle time (median, end-to-end)',
+    'hours',
+    42, 30, 36,
+    'VP Engineering',
+    'leading'
+  ),
+
+  -- KRs under Q3-2C (measurement infrastructure)
+  (
+    'f0000000-0000-0000-0000-000000000016',
+    'e0000000-0000-0000-0000-000000000008',
+    'Department heads completing AI Maturity self-assessment',
+    'count',
+    0, 8, 3,
+    'Chief of Staff',
+    'lagging'
+  ),
+  (
+    'f0000000-0000-0000-0000-000000000017',
+    'e0000000-0000-0000-0000-000000000008',
+    'Departments running weekly time-savings pilots',
+    'count',
+    0, 3, 1,
+    'Chief of Staff',
+    'leading'
   );
 
 
@@ -330,7 +514,7 @@ insert into initiative (
     'Phase 2 redesign deployed to 100% of new signups',
     '2026-09-22',
     'on_track',
-    'Phase 2 rollout is on track. Early A/B results show ~6pt improvement in tutorial completion. Activation impact lags by ~2 weeks; expect signal by end of Q3.'
+    'Phase 2 redesign is on track. Currently deployed to 50% of new signups via an A/B split; the redesigned cohort shows tutorial completion up 8 points (64% vs 56% control) and activation rate up 5 points measured at day 14. We plan to move to 100% on 9/22 pending one more week of data to confirm the lift isn''t a novelty effect. Two risks worth naming: (a) the effect is concentrated in the first-hour experience — later sessions look similar between arms, which we''ll investigate in Phase 3; (b) enterprise signups (a small slice) are behaving differently and may need a separate flow.'
   ),
 
   -- 2. Sample data feature — at risk, exec signaling more concern than team
@@ -345,7 +529,7 @@ insert into initiative (
     'Three of five industry datasets approved by legal',
     '2026-09-15',
     'off_track',
-    'Legal review of two industry datasets is taking longer than expected (finance and healthcare). Exec attention helpful — may need to deprioritize one of the two if not cleared by 9/15.'
+    'Three of five industry datasets are cleared for shipping: retail, logistics, and SaaS metrics. Finance and healthcare are still under legal review — finance because of specific privacy concerns about the source data even after anonymization, healthcare because our legal team wants a HIPAA-adjacent review even though the sample data isn''t real PHI. We''re actively working with legal to move both forward. If both aren''t cleared by the milestone date we''ll ship the three that are cleared and revisit finance/healthcare in Q4.'
   ),
 
   -- 3. ProductA Launch — Go-to-Market initiative, demonstrating exec-team divergence
@@ -360,7 +544,7 @@ insert into initiative (
     'Launch event in Berlin (target 80 enterprise attendees)',
     '2026-09-29',
     'blocked',                                    -- exec view: blocked (worse)
-    'Customer integration partner pulled out of co-marketing agreement two weeks ago. Need exec help unblocking the legal escalation with their counsel. Without it, launch slips to Q4.'
+    'Launch continues to build strong momentum. Berlin event on track for 80+ enterprise attendees — 74 registered, more coming in daily. Product interest is very high across the target segment, with 18 discovery calls booked coming out of pre-launch outreach and an active pipeline forming. The team is aligned and executing. Some challenges around pipeline velocity that we''re working through, but overall the launch is positioned to make significant impact on the EMEA logos objective this quarter.'
   ),
 
   -- 4. EMEA Expansion — past milestone, status still active
@@ -375,7 +559,7 @@ insert into initiative (
     'All four BDRs ramped to 50% of monthly targets',
     '2026-08-30',                                  -- past milestone date (intentional)
     'at_risk',
-    'Three of four BDRs hired and onboarded; fourth role (Paris) still open after two failed offers. Productivity ramp slightly behind expected curve.'
+    'Hiring is complete — 4 BDRs on board (2 in London, 2 in Berlin) as of 8/25. Onboarding progressing well; two of the four are already generating meetings within the first month. The other two are working through the ramp curve as expected. Overall on the right track but the ramp is taking a bit longer than we''d initially modeled, largely because the EMEA outbound motion requires more localized playbook adaptation than we anticipated. We''ll get there — targeting the 50% quota milestone by end of Q3 as planned.'
   ),
 
   -- 5. Cross-team initiative — Platform team owns, but moves a Product KR
@@ -390,7 +574,7 @@ insert into initiative (
     'All 12 bugs fixed and deployed; 8 verified with reporting customers',
     '2026-09-26',
     'at_risk',                                    -- exec view: at risk (one customer is high-profile, escalated)
-    'Eight bugs fixed and verified, four in progress. One bug fix is delayed due to a third-party library dependency; this is the one blocking a high-profile customer relationship — flagging for exec awareness.'
+    '9 of 12 bugs fully fixed and deployed; 6 verified with the reporting customer. Two of the remaining three (BUG-8127, BUG-8134) are staged for the 9/15 release and will complete customer verification in the following week. The third (BUG-8091) is a race condition in the query scheduler that''s proving harder to reproduce; we''ve isolated it to a specific concurrency pattern and expect a fix by 9/18 but I want to flag it as our real remaining risk. Sev-1/2 incident count over the last 30 days is 4, down from a monthly average of 7 pre-push. On track to close the initiative by end of Q3.'
   ),
 
   -- 6. Platform reliability work — straightforward, on track
@@ -405,7 +589,7 @@ insert into initiative (
     'Caching layer rolled out to all production read paths',
     '2026-10-15',
     'on_track',
-    'On track. Initial canary deployment shows p95 reduction of ~22% on cached query patterns. Full rollout next month.'
+    'Caching layer rollout is proceeding through production read paths. The team has migrated the top four query types (representing ~65% of read traffic) with meaningful latency improvement — p95 down 40% on migrated paths. Team is working diligently through the remaining paths with a target of full rollout by end of Q3. Some minor issues have come up during migration but the team is managing them appropriately. We''re excited about the impact on customer experience once complete.'
   ),
 
   -- 7. Killed initiative — included so the status filter has something to filter
@@ -418,34 +602,37 @@ insert into initiative (
     'killed', 'S',
     20, null,
     null, null, null,
-    'Killed in planning review — insufficient ROI projection given current customer base. Revisit in Q1 2027.'
+    'Program launched 8/12 with credit-back rewards structured at $500 per qualified referral. Six weeks in: 34 referrals submitted, 11 qualified, 4 converted (2 mid-market, 2 SMB). Conversion is at the low end of what we modeled (we projected 6-8 in this window) — the qualification rate is the choke point, not raw submissions. Two adjustments planned: (a) simplify the qualification criteria for referrals from customers with 6+ months of tenure — that segment is submitting well-fit leads but they''re getting rejected on technicalities; (b) increase reward for enterprise-tier referrals to $1,500 to weight incentives toward higher-value conversions. Program remains net-positive but needs iteration.'
   ),
 
   -- 8. Proposed initiative — bet on the table but not yet started
   (
     '10000000-0000-0000-0000-000000000008',
     'a0000000-0000-0000-0000-000000000002',     -- Product team owns
-    'AI query assistant (research spike)',
-    'Two-week research spike to evaluate adding a natural-language query assistant to the product, with a go/no-go decision at the end.',
+    'AI query assistant beta program',
+    'Design-partner beta of the natural-language AI query assistant. Elevated from a Q2 research spike to a flagship initiative under the AI-native strategy. Goal: prove the AI-augmented workflow reaches 15 active design-partner customers using it 3+ times/week by end of Q3, en route to broader release in Q4.',
     'VP Product',
-    'proposed', 'XS',
-    0, null,
-    'Spike kickoff with engineering, design, and a customer advisory panel',
-    '2026-10-07',
-    null,
-    null
+    'active', 'L',
+    45, 'at_risk',
+    '15 design partners actively using AI query assistant 3+ times per week',
+    '2026-10-05',
+    'on_track',
+    'Beta program is progressing well. Four design partners actively using the AI query assistant, with early feedback themes emerging around query refinement and result explanation. Two additional partners onboarding this week. Engagement is trending in the right direction; we''re on pace for 15 by end of Q3. The team is iterating quickly based on partner input.'
   ),
 
   -- 9. Orphaned initiative — no KR link, no org_unit_id — for the Hotspots Other concerns bucket
   (
     '10000000-0000-0000-0000-000000000009',
-    null,                                          -- no owning org
+    'a0000000-0000-0000-0000-000000000002',        -- Product team owns
     'Documentation overhaul',
     'Rewrite product documentation to match the new navigation structure.',
-    null, 'active', 'M',
-    35, 'at_risk',
-    null, null,
-    null, null
+    'Head of Content',
+    'active', 'M',
+    45, 'on_track',
+    'New nav structure and top 20 pages published',
+    '2026-10-01',
+    'on_track',
+    'Documentation rewrite is progressing well. The new navigation structure has been finalized and we''re actively working through the content updates. The team is making good progress on the top 20 pages and is on track for the October milestone. Cross-team collaboration with Product and Support has been strong. Expect this to significantly improve the self-service experience for customers.'
   ),
 
   -- 10. Top-50 QBRs — Customer Success driving NRR
@@ -460,7 +647,7 @@ insert into initiative (
     'All top-20 QBRs completed with exec sponsor present',
     '2026-09-30',
     'on_track',
-    'Pace is on track. 32 of 50 QBRs complete; 14 expansion opportunities identified worth an estimated $1.6M ARR. Two red-tier accounts flagged for save motion.'
+    '35 of 50 QBRs scheduled and 24 completed. Top-20 progress: 14 completed with an exec sponsor present, remaining 6 scheduled by 9/30. Three themes surfacing across the sessions: (1) ProductA is generating strong interest — 8 of 14 top accounts are asking about it explicitly; (2) two accounts (Redwood Financial, Hemlock Systems) raised implementation-partner concerns worth a follow-up; (3) usage patterns suggest 3-4 accounts are strong expansion candidates for Q4. On track. One QBR (Cascade Bio) rescheduled from 9/12 to 9/26 due to their CEO travel — no impact on top-20 completion.'
   ),
 
   -- 11. Success playbook rollout — Customer Success operational lift
@@ -475,7 +662,7 @@ insert into initiative (
     'Playbooks live for all six trigger types',
     '2026-10-10',
     'at_risk',
-    'Integration with the customer data platform is slower than expected. Playbooks 3 and 4 pushed to October. Not blocking Q3 NRR outcome directly but weakens leading-indicator signal.'
+    'Playbook rollout is on track. CSMs are receiving training on the new usage-triggered outreach patterns and beginning to use them in customer conversations. Adoption is a little slower than we''d hoped because the team has been stretched supporting ProductA launch inquiries — customers have a lot of questions and CSMs are prioritizing responsiveness there. But we''re on schedule for full adoption by mid-October. The team is excited about the playbook and once things settle down we expect strong uptake.'
   ),
 
   -- 12. Feature adoption tour — Product growth driving retention KRs
@@ -490,7 +677,7 @@ insert into initiative (
     'All four Phase 1 features have adoption tours live',
     '2026-09-24',
     'on_track',
-    'Three of four adoption tours live. Early data shows a +0.4 feature-per-account lift in the treatment cohort — better than expected. Fourth ships next week.'
+    'Adoption tours live for 3 of 4 Phase 1 features (SQL Editor, Dashboard Sharing, Alert Rules); the fourth (Cohort Builder) ships this week. Adoption on the shipped three: SQL Editor tour lifted feature usage 34% in paid accounts that saw it (measured 30-day window after exposure), Dashboard Sharing lifted 18%, Alert Rules lifted 9%. Alert Rules is our weakest lift — hypothesis is the feature itself is more niche and the tour needs a targeting criterion beyond ''hasn''t used it,'' which we''ll address in Phase 2. Cohort Builder tour is finalized; deploying 9/16.'
   ),
 
   -- 13. Weekly-active resurrection campaign — Product growth driving WAU
@@ -499,13 +686,58 @@ insert into initiative (
     'a0000000-0000-0000-0000-000000000002',        -- Product team owns
     'Dormant paid-account re-engagement campaign',
     'Coordinated push to re-engage paid accounts whose WAU has dropped below their historical baseline. Combines in-app messaging, email nudges, and CSM handoff for the top 20 dormant accounts.',
-    'Head of Product Growth',
-    'proposed', 'S',
-    0, null,
-    'Campaign design approved and kick-off with CS scheduled',
-    '2026-10-01',
-    null,
-    null
+    'CS Ops Lead',
+    'active', 'S',
+    50, 'at_risk',
+    'Campaign live and 4-week engagement data reviewed',
+    '2026-09-30',
+    'on_track',
+    'Campaign targeting paid accounts with fewer than 3 active users over the last 60 days. First wave sent to 47 accounts on 8/28; second wave planned for mid-September. Some early positive signals — a few accounts have re-engaged and we''re seeing some conversation with account owners. We''re refining the message for wave 2 based on what we''ve learned. Overall making progress toward the re-engagement objective this quarter.'
+  ),
+
+  -- 14. Claude/Cursor rollout to Engineering — new under Strategy 2, Ready-to-send tier
+  (
+    '10000000-0000-0000-0000-000000000014',
+    'a0000000-0000-0000-0000-000000000004',        -- Platform team (Engineering sits here)
+    'Claude/Cursor rollout to Engineering (Phase 1)',
+    'Deploy Claude Code and Cursor across the engineering org, targeting 80% weekly active usage of AI-assisted code review by end of Q3. Includes licensing, team-level training, and adoption rituals.',
+    'VP Engineering',
+    'active', 'M',
+    60, 'on_track',
+    'All backend engineers onboarded with team-level usage rituals',
+    '2026-09-25',
+    'on_track',
+    'Phase 1 rollout is on track. 52% of engineers now use Claude Code weekly for code review, up from 30% at the start of Q3 — measured via Claude''s usage API against active engineer count. Cycle-time impact is early but real: median PR cycle time down from 42 hours to 36 hours since introduction of AI-assisted review. Two teams (Platform Foundations, Data Ingest) established weekly usage rituals that appear correlated with the biggest cycle-time drops. Remaining risk: three senior engineers haven''t adopted; a 1:1 review is scheduled with each to understand blockers. On track to hit 80% adoption by end of Q3.'
+  ),
+
+  -- 15. AI Maturity Scale rollout — new under Strategy 2, Rework tier (demo star)
+  (
+    '10000000-0000-0000-0000-000000000015',
+    'a0000000-0000-0000-0000-000000000001',        -- Company-level (CoS-driven cross-team)
+    'AI Maturity Scale rollout',
+    'Define and roll out an internal AI Maturity Scale (Levels 1-5) so leaders can assess where each team sits on the AI adoption curve. Feeds into FY planning for AI investment across departments.',
+    'Chief of Staff',
+    'active', 'M',
+    30, 'at_risk',
+    'All 8 department heads complete Level 1-3 self-assessment',
+    '2026-09-30',
+    'on_track',
+    'We''re building the AI Maturity Scale to help leaders understand where each team sits on the AI adoption curve and identify the highest-leverage places to invest. Great engagement in the working sessions — every department head we''ve talked to is excited about the initiative and ready to participate. Three departments have already started their self-assessments. We''re aiming to have all department heads complete their assessments by end of Q3 and use the results to inform Q4 planning. This will be a key input to our AI-native operating model going forward.'
+  ),
+
+  -- 16. AI Time Savings Measurement Framework — new under Strategy 2, Rework tier
+  (
+    '10000000-0000-0000-0000-000000000016',
+    'a0000000-0000-0000-0000-000000000001',        -- Company-level (CoS-driven)
+    'AI Time Savings Measurement Framework',
+    'Build the framework and instrumentation to measure hours saved per FTE via AI-augmented workflows. Pilot in three departments in Q3, expand company-wide in Q4.',
+    'Chief of Staff',
+    'active', 'S',
+    25, 'at_risk',
+    'Three departments running weekly time-savings pilots',
+    '2026-10-15',
+    'at_risk',
+    'Building out the framework to measure hours saved per FTE via AI-augmented workflows. Have partnered with Engineering as our first pilot department and are working to identify two additional pilots to run in Q3. The methodology is still being refined — we''re exploring self-reported estimates versus more instrumented approaches. Once the framework is in place we''ll be able to report time savings by team and department and use that to inform where to invest next. Targeting three pilots by mid-October.'
   );
 
 
@@ -557,7 +789,20 @@ insert into initiative_key_result (initiative_id, key_result_id, predicted_kr_im
   ('10000000-0000-0000-0000-000000000012', 'f0000000-0000-0000-0000-000000000010', 4, null),      -- +4pt WAU
 
   -- 13. Dormant re-engagement moves WAU
-  ('10000000-0000-0000-0000-000000000013', 'f0000000-0000-0000-0000-000000000010', 3, null);
+  ('10000000-0000-0000-0000-000000000013', 'f0000000-0000-0000-0000-000000000010', 3, null),
+
+  -- #8 elevated AI query assistant beta: links to the new AI query KR (f12)
+  ('10000000-0000-0000-0000-000000000008', 'f0000000-0000-0000-0000-000000000012', 8, null),  -- +8 design partners
+
+  -- #14 Claude/Cursor rollout: moves both the code-review adoption KR and PR cycle-time KR
+  ('10000000-0000-0000-0000-000000000014', 'f0000000-0000-0000-0000-000000000014', 40, null), -- +40pt adoption
+  ('10000000-0000-0000-0000-000000000014', 'f0000000-0000-0000-0000-000000000015', -8, null), -- -8 hrs cycle time (lower is better)
+
+  -- #15 AI Maturity Scale rollout: moves the self-assessment KR
+  ('10000000-0000-0000-0000-000000000015', 'f0000000-0000-0000-0000-000000000016', 5, null),  -- +5 department heads
+
+  -- #16 AI Time Savings Framework: moves the pilots-running KR
+  ('10000000-0000-0000-0000-000000000016', 'f0000000-0000-0000-0000-000000000017', 2, null); -- +2 pilots
 
 
 -- ----------------------------------------------------------------------------
@@ -731,6 +976,56 @@ insert into check_in (key_result_id, value, note, created_at) values
   ('f0000000-0000-0000-0000-000000000011', 3.7, 'Adoption tour treatment cohort at +0.5 vs control.', now() - interval '4 weeks'),
   ('f0000000-0000-0000-0000-000000000011', 3.9, null, now() - interval '2 weeks'),
   ('f0000000-0000-0000-0000-000000000011', 4.1, 'Sustained lift; expanding treatment cohort next week.', now() - interval '1 week');
+
+
+-- AI query assistant design partners (0 → 4, target 15) — early-stage beta
+insert into check_in (key_result_id, value, note, created_at) values
+  ('f0000000-0000-0000-0000-000000000012', 0, 'Program kickoff. First outreach to design-partner candidates.', now() - interval '8 weeks'),
+  ('f0000000-0000-0000-0000-000000000012', 0, null, now() - interval '6 weeks'),
+  ('f0000000-0000-0000-0000-000000000012', 1, 'First design partner (Kestrel Labs) onboarded.', now() - interval '5 weeks'),
+  ('f0000000-0000-0000-0000-000000000012', 1, null, now() - interval '4 weeks'),
+  ('f0000000-0000-0000-0000-000000000012', 2, 'Redwood Financial signed. They want to focus on regulatory reporting queries.', now() - interval '3 weeks'),
+  ('f0000000-0000-0000-0000-000000000012', 3, 'Third partner — Meridian Retail. Feedback theme: AI needs to explain WHY it wrote the query.', now() - interval '2 weeks'),
+  ('f0000000-0000-0000-0000-000000000012', 4, 'Fourth partner active. Frequency is 2-3 uses/week; need to get to 3+ for our target.', now() - interval '1 week');
+
+-- Time-to-first-insight dashboard (0 → 0, target 1) — infrastructure being built
+insert into check_in (key_result_id, value, note, created_at) values
+  ('f0000000-0000-0000-0000-000000000013', 0, 'Discovery on measurement approach. Debate: self-report vs instrumented events.', now() - interval '4 weeks'),
+  ('f0000000-0000-0000-0000-000000000013', 0, 'Decision made — instrumented events. Spec written.', now() - interval '2 weeks'),
+  ('f0000000-0000-0000-0000-000000000013', 0, 'Waiting on eng capacity to instrument.', now() - interval '1 week');
+
+-- Engineers using AI-assisted code review (30 → 52, target 80) — solid ramp
+insert into check_in (key_result_id, value, note, created_at) values
+  ('f0000000-0000-0000-0000-000000000014', 32, null, now() - interval '8 weeks'),
+  ('f0000000-0000-0000-0000-000000000014', 35, 'Kickoff email sent; licenses provisioned.', now() - interval '6 weeks'),
+  ('f0000000-0000-0000-0000-000000000014', 39, 'First team-level training with Platform Foundations.', now() - interval '5 weeks'),
+  ('f0000000-0000-0000-0000-000000000014', 43, null, now() - interval '4 weeks'),
+  ('f0000000-0000-0000-0000-000000000014', 47, 'Data Ingest team leaning in — top adopters this week.', now() - interval '3 weeks'),
+  ('f0000000-0000-0000-0000-000000000014', 50, null, now() - interval '2 weeks'),
+  ('f0000000-0000-0000-0000-000000000014', 52, '52% weekly. Slower ramp on senior engineers — 1:1s scheduled.', now() - interval '1 week');
+
+-- Engineering PR cycle time (42 → 36, target 30 — lower is better)
+insert into check_in (key_result_id, value, note, created_at) values
+  ('f0000000-0000-0000-0000-000000000015', 41, null, now() - interval '8 weeks'),
+  ('f0000000-0000-0000-0000-000000000015', 40, null, now() - interval '6 weeks'),
+  ('f0000000-0000-0000-0000-000000000015', 38, 'AI-assisted reviews cutting review time visibly.', now() - interval '4 weeks'),
+  ('f0000000-0000-0000-0000-000000000015', 37, null, now() - interval '2 weeks'),
+  ('f0000000-0000-0000-0000-000000000015', 36, 'Median down 6 hours since Q3 start.', now() - interval '1 week');
+
+-- Department heads completing AI Maturity self-assessment (0 → 3, target 8) — slow, Rework signal
+insert into check_in (key_result_id, value, note, created_at) values
+  ('f0000000-0000-0000-0000-000000000016', 0, 'Scale first draft published. Feedback session with a few DHs planned.', now() - interval '6 weeks'),
+  ('f0000000-0000-0000-0000-000000000016', 1, 'Head of Product completed self-assessment. Feedback: framework is aspirational, no anchor definitions.', now() - interval '4 weeks'),
+  ('f0000000-0000-0000-0000-000000000016', 1, null, now() - interval '3 weeks'),
+  ('f0000000-0000-0000-0000-000000000016', 2, 'Two more DHs completed. Both flagged that Level 3-5 definitions are fuzzy.', now() - interval '2 weeks'),
+  ('f0000000-0000-0000-0000-000000000016', 3, 'Three DHs done — 5 to go. Pace is behind plan.', now() - interval '1 week');
+
+-- Departments running weekly time-savings pilots (0 → 1, target 3) — slow
+insert into check_in (key_result_id, value, note, created_at) values
+  ('f0000000-0000-0000-0000-000000000017', 0, null, now() - interval '4 weeks'),
+  ('f0000000-0000-0000-0000-000000000017', 0, 'Engineering pilot spec in review.', now() - interval '3 weeks'),
+  ('f0000000-0000-0000-0000-000000000017', 1, 'Engineering pilot live — self-reporting via weekly form.', now() - interval '2 weeks'),
+  ('f0000000-0000-0000-0000-000000000017', 1, 'Only Engineering pilot running. Two more supposedly starting but no commitments.', now() - interval '1 week');
 
 -- Yearly KRs get a couple of check-ins each (much lower cadence) for the history disclosure
 insert into check_in (key_result_id, value, note, created_at) values
