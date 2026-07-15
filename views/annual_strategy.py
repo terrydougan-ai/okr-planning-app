@@ -23,6 +23,7 @@ from supabase import create_client, Client
 
 # Analytics — silently no-op when POSTHOG_API_KEY isn't configured
 from views._analytics import track_page
+from views._ui_helpers import format_number
 
 
 # -----------------------------------------------------------------------------
@@ -184,10 +185,15 @@ years_for_dropdown = sorted(known_years | {this_year, this_year + 1}, reverse=Tr
 
 pc1, pc2 = st.columns([2, 1])
 with pc1:
-    # Default to sticky scope org if set. Note tree_labels here has
-    # "All Organizations" at index 0, then the unit tree.
+    # Default to sticky scope org if set. Otherwise, default to the top-level
+    # company (index 1) rather than "All Organizations" (index 0). Reason:
+    # "All Organizations" doesn't have a per-org editor to display, so the
+    # page's editor section is hidden — first-time visitors saw a mostly
+    # empty page. Defaulting to the company gives an immediately useful
+    # editing surface; the user can still pick "All Organizations" to see
+    # the read-only overview across all units.
     _saved_org_id = st.session_state.get("scope_org_id")
-    _default_org_idx = 0
+    _default_org_idx = 1 if len(tree_labels) > 1 else 0
     if _saved_org_id:
         for _i, _lbl in enumerate(tree_labels):
             if tree_label_to_id.get(_lbl) == _saved_org_id:
@@ -874,7 +880,7 @@ for _, strat in ou_strategies_sorted.iterrows():
                             indicator_prefix = "📡 "
                         kr_header = (
                             f"{grade_color(grade)} {indicator_prefix}**{kr['title']}** — "
-                            f"{kr.get('current_value')} / {kr.get('target_value')} {unit} "
+                            f"{format_number(kr.get('current_value'))} / {format_number(kr.get('target_value'))} {unit} "
                             f"({grade:.0%})"
                         )
                         with st.expander(kr_header, expanded=False):

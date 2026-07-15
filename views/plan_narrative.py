@@ -30,6 +30,7 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 from views._analytics import track_page
+from views._ui_helpers import format_number
 
 
 
@@ -123,8 +124,8 @@ def format_kr_value(kr) -> str:
     current = kr.get("current_value")
     target = kr.get("target_value")
     if current is None:
-        return f"_no current value_ · target {target} {unit}"
-    return f"{current} / {target} {unit}"
+        return f"_no current value_ · target {format_number(target)} {unit}"
+    return f"{format_number(current)} / {format_number(target)} {unit}"
 
 
 def indicator_badge(t) -> str:

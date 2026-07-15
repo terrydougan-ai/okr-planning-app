@@ -18,6 +18,7 @@ from supabase import create_client, Client
 # AI helpers — silently no-op when ANTHROPIC_API_KEY isn't configured
 from views._ai_helpers import is_ai_enabled, summarize_hotspots
 from views._analytics import track_page
+from views._ui_helpers import format_number
 
 
 
@@ -649,8 +650,8 @@ def _render_red_kr(r):
         f"<span style='color:#6B7280;font-size:0.9em'>"
         f"(under: {r['obj_title']})</span><br>"
         f"<span style='color:#6B7280;font-size:0.9em'>"
-        f"current <b>{kr.get('current_value')} {unit}</b> · "
-        f"target {kr.get('target_value')} {unit} · "
+        f"current <b>{format_number(kr.get('current_value'))} {unit}</b> · "
+        f"target {format_number(kr.get('target_value'))} {unit} · "
         f"{r['grade']:.0%} to goal · owner: {owner}"
         f"{note_part}"
         f"</span></div>",

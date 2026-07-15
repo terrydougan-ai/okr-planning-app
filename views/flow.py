@@ -28,6 +28,7 @@ from supabase import create_client, Client
 
 # Analytics — silently no-op when POSTHOG_API_KEY isn't configured
 from views._analytics import track_page
+from views._ui_helpers import format_number
 
 
 # -----------------------------------------------------------------------------
@@ -480,9 +481,9 @@ for i, (_, kr) in enumerate(krs_sorted.iterrows()):
     )
     hover = (
         f"<b>{kr['title']}</b><br>"
-        f"Start {kr.get('start_value')} → "
-        f"Current {kr.get('current_value')} → "
-        f"Target {kr.get('target_value')} {unit}"
+        f"Start {format_number(kr.get('start_value'))} → "
+        f"Current {format_number(kr.get('current_value'))} → "
+        f"Target {format_number(kr.get('target_value'))} {unit}"
         f"{orphan_note}"
     )
     add_node("key_result", kr["id"], kr["title"], hover, is_orphan=is_orphan)

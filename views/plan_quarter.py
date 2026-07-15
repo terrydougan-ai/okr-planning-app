@@ -25,6 +25,7 @@ from supabase import create_client, Client
 # AI helpers — silently no-op when ANTHROPIC_API_KEY isn't configured
 from views._ai_helpers import is_ai_enabled, suggest_krs
 from views._analytics import track_page
+from views._ui_helpers import format_number
 
 
 
@@ -1123,7 +1124,7 @@ for group_key in ordered_group_keys:
                         indicator_prefix = "📡 "
                     kr_header = (
                         f"{grade_color(grade)} {indicator_prefix}**{kr['title']}** — "
-                        f"{kr.get('current_value')} / {kr.get('target_value')} {unit} "
+                        f"{format_number(kr.get('current_value'))} / {format_number(kr.get('target_value'))} {unit} "
                         f"({grade:.0%})"
                     )
 

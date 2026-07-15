@@ -29,6 +29,7 @@ from supabase import create_client, Client
 # AI helpers — silently no-op when ANTHROPIC_API_KEY isn't configured
 from views._ai_helpers import is_ai_enabled, review_kr_checkin, render_review
 from views._analytics import track_page
+from views._ui_helpers import format_number
 
 
 
@@ -414,7 +415,7 @@ def render_kr_box(kr):
         with h_start:
             st.markdown(
                 f"<div style='color:#6B7280;font-size:0.85em'>Start</div>"
-                f"<div style='font-size:0.95em'><b>{start} {unit}</b></div>",
+                f"<div style='font-size:0.95em'><b>{format_number(start)} {unit}</b></div>",
                 unsafe_allow_html=True,
             )
         with h_cur:
@@ -429,7 +430,7 @@ def render_kr_box(kr):
         with h_tgt:
             st.markdown(
                 f"<div style='color:#6B7280;font-size:0.85em'>Target</div>"
-                f"<div style='font-size:0.95em'><b>{target} {unit}</b><br>"
+                f"<div style='font-size:0.95em'><b>{format_number(target)} {unit}</b><br>"
                 f"<span style='color:#9CA3AF'>{grade:.0%} to goal</span></div>",
                 unsafe_allow_html=True,
             )
