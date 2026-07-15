@@ -28,6 +28,8 @@ from supabase import create_client, Client
 
 # AI helpers — silently no-op when ANTHROPIC_API_KEY isn't configured
 from views._ai_helpers import is_ai_enabled, review_kr_checkin, render_review
+from views._analytics import track_page
+
 
 
 # -----------------------------------------------------------------------------
@@ -138,6 +140,7 @@ def fmt_date(ts) -> str:
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
+track_page("Key Result Check-ins")
 st.title("📈 Key Result Check-ins")
 st.caption(
     "Update current values and add context notes for KRs. Quarterly KRs are "

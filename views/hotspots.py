@@ -17,6 +17,8 @@ from supabase import create_client, Client
 
 # AI helpers — silently no-op when ANTHROPIC_API_KEY isn't configured
 from views._ai_helpers import is_ai_enabled, summarize_hotspots
+from views._analytics import track_page
+
 
 
 # Thresholds — kept consistent with Hotspots v1 + the rest of the app
@@ -157,6 +159,7 @@ MS_LABELS = {
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
+track_page("Hotspots")
 st.title("🔥 Hotspots")
 st.caption(
     "Experimental layout — same data as Hotspots, organized differently. "

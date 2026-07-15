@@ -26,6 +26,9 @@ import pandas as pd
 import plotly.graph_objects as go
 from supabase import create_client, Client
 
+# Analytics — silently no-op when POSTHOG_API_KEY isn't configured
+from views._analytics import track_page
+
 
 # -----------------------------------------------------------------------------
 # Supabase
@@ -108,6 +111,7 @@ ORPHAN_LINK_COLOR = "rgba(239, 68, 68, 0.25)"
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
+track_page("Planning Flow")
 st.title("🌊 Planning Flow")
 st.caption(
     "The planning portfolio as a Sankey. Four layers: yearly → quarterly → "

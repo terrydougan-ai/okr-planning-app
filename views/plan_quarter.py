@@ -24,6 +24,8 @@ from supabase import create_client, Client
 
 # AI helpers — silently no-op when ANTHROPIC_API_KEY isn't configured
 from views._ai_helpers import is_ai_enabled, suggest_krs
+from views._analytics import track_page
+
 
 
 # -----------------------------------------------------------------------------
@@ -166,6 +168,7 @@ def fmt_money(v) -> str:
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
+track_page("Plan a Quarter")
 st.title("✏️ Plan a Quarter")
 st.caption(
     "The quarterly workshop. Pick an org unit and period; everything below is "

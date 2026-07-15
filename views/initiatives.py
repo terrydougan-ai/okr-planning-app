@@ -28,6 +28,8 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 from supabase import create_client, Client
+from views._analytics import track_page
+
 
 
 # -----------------------------------------------------------------------------
@@ -137,6 +139,7 @@ def sort_key_for_initiative(init):
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
+track_page("Initiatives")
 st.title("🚀 Initiatives")
 st.caption(
     "Read-only structural view of the initiative portfolio — sibling to "

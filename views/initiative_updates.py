@@ -34,6 +34,9 @@ from views._ai_helpers import (
     compute_initiative_signature,
 )
 
+# Analytics — silently no-op when POSTHOG_API_KEY isn't configured
+from views._analytics import track_page
+
 
 # Display vocabulary — the four RAG-ish states for delivery health.
 # Stored in DB as the keys below; rendered as the friendlier labels.
@@ -113,6 +116,7 @@ def parse_date(v):
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
+track_page("Initiative Check-ins")
 st.title("📊 Initiative Check-ins")
 st.caption(
     "Weekly/monthly execution reporting. Update delivery %, milestone "
@@ -594,9 +598,6 @@ for _, init in visible_sorted.iterrows():
                         except Exception:
                             pass
                     render_review(_saved_review)
-
-        # Delivery progress bar (visualization of what's stored)
-        st.progress((init.get("progress_pct") or 0) / 100)
 
         # ---- Actual KR impact per link ----
         st.markdown("---")

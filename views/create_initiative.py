@@ -20,6 +20,8 @@ Track is for how it's GOING.
 import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
+from views._analytics import track_page
+
 
 
 INIT_STATUSES = ["proposed", "active", "done", "killed"]
@@ -78,6 +80,7 @@ def safe_str(v) -> str:
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
+track_page("Create Initiative")
 st.title("🚀 Create Initiative")
 st.caption(
     "Create new initiatives and manage their structure: linked KRs, business "

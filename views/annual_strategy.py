@@ -21,6 +21,9 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 
+# Analytics — silently no-op when POSTHOG_API_KEY isn't configured
+from views._analytics import track_page
+
 
 # -----------------------------------------------------------------------------
 # Supabase
@@ -96,6 +99,7 @@ def grade_color(g: float) -> str:
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
+track_page("Annual Strategy")
 st.title("📜 Annual Strategy")
 st.caption(
     "The yearly layer — strategy and big-picture objectives that don't change "

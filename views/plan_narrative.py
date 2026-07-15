@@ -29,6 +29,8 @@ How this differs from Plan a Quarter:
 import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
+from views._analytics import track_page
+
 
 
 # -----------------------------------------------------------------------------
@@ -191,6 +193,7 @@ def obj_status_chip(status: str) -> str:
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
+track_page("Executive Narrative")
 st.title("📄 Executive Narrative")
 st.caption(
     "The plan as a document. Strategy cascades into yearly and quarterly "

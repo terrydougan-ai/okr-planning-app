@@ -15,6 +15,9 @@ page just gives them the context to be read as such.
 
 import streamlit as st
 
+# Analytics — silently no-op when POSTHOG_API_KEY isn't configured
+from views._analytics import track_page
+
 
 REPO_URL = "https://github.com/terrydougan-ai/okr-planning-app"
 LINKEDIN_URL = "https://www.linkedin.com/in/terrydougan/"
@@ -24,6 +27,7 @@ PROFILE_REPO_URL = "https://github.com/terrydougan-ai"
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
+track_page("About")
 st.title("👋 About this project")
 
 st.markdown(
@@ -228,6 +232,9 @@ FRAMEWORK_SVG = """
 # is the reliable path for inline vector graphics. Height is set to the
 # SVG's viewBox height plus a small margin so it doesn't get clipped.
 import streamlit.components.v1 as components
+
+# Analytics — silently no-op when POSTHOG_API_KEY isn't configured
+
 components.html(FRAMEWORK_SVG, height=480, scrolling=False)
 
 

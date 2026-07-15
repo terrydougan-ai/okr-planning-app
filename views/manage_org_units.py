@@ -16,6 +16,8 @@ delete from the UI at all.
 import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
+from views._analytics import track_page
+
 
 
 # Supabase
@@ -95,6 +97,7 @@ def build_tree_options(org_units: pd.DataFrame, exclude_id: str | None = None):
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
+track_page("Organization")
 st.title("🏛️ Organization")
 st.caption(
     "Create and edit the structural hierarchy: company → segment(s) → team(s). "
