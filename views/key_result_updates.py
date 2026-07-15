@@ -705,6 +705,17 @@ else:
                     success_count += 1
                 except Exception as e:
                     errors.append(f"KR {kr_id}: {e}")
+            # Clear the pending dict AND explicitly clear each note widget's
+            # session state. This matters for notes specifically: the note
+            # widget uses a `key=`, so once typed, its value persists in
+            # session_state until we delete the key. Without this, on rerun
+            # the widget re-reads the old note, `note_changed` is True again,
+            # and pending re-populates — leaving the "pending change" banner
+            # showing even though the save succeeded.
+            for _kr_id in list(pending.keys()):
+                _note_widget_key = f"note_{_kr_id}_{scope_key}"
+                if _note_widget_key in st.session_state:
+                    del st.session_state[_note_widget_key]
             st.session_state[pending_state_key] = {}
             clear_cache()
             if errors:
@@ -722,6 +733,13 @@ else:
             st.rerun()
     with bc3:
         if st.button("↩️ Discard", use_container_width=True):
+            # Same pattern as Save: clear the note widget keys as well as
+            # the pending dict, otherwise discarding leaves the typed notes
+            # visible in their widgets even though pending is cleared.
+            for _kr_id in list(st.session_state.get(pending_state_key, {}).keys()):
+                _note_widget_key = f"note_{_kr_id}_{scope_key}"
+                if _note_widget_key in st.session_state:
+                    del st.session_state[_note_widget_key]
             st.session_state[pending_state_key] = {}
             st.rerun()
 
