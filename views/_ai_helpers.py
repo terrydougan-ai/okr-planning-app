@@ -348,7 +348,7 @@ def review_initiative_update(update: dict) -> Optional[dict]:
 Read the update below as a package. Check for:
 - CLARITY: Is the narrative specific enough that a busy VP would understand the situation? Or is it vague ("making progress", "some blockers")?
 - CONSISTENCY: Do the fields agree? For example: if delivery is at 40% and status is "on track", does the narrative explain that pace? If exec_rag is worse than milestone_status, does the narrative explain the divergence? If the milestone date has passed, was the status updated?
-- COMPLETENESS: For a struggling initiative (not on-track), did the PM explain why AND describe a mitigation plan or at least the plan to get a mitigation plan? For a healthy initiative, did they still note what could put it at risk? Are the questions a VP would ask actually addressed?
+- COMPLETENESS: For a struggling initiative (not on-track), did the PM explain why AND describe a mitigation plan? For a healthy initiative, did they still note what could put it at risk? Are the questions a VP would ask actually addressed?
 - REALISM: Do the numbers hold up? Is 100% delivery plausible given the status? Is a 5-day-away milestone realistic given progress? Is the KR impact claim (via progress) even remotely on the trajectory needed to hit target?
 
 INITIATIVE CONTEXT:
@@ -706,3 +706,123 @@ def compute_kr_checkin_signature(checkin: dict) -> str:
         "new_value": checkin.get("new_value"),
         "note": checkin.get("note"),
     })
+
+
+# -----------------------------------------------------------------------------
+# AI-native drafting: initiative check-in
+# -----------------------------------------------------------------------------
+# This function inverts the default authorship: instead of the PM writing
+# and the AI reviewing, the AI drafts from available context and the PM
+# confirms or edits. This is the "authorship-native" pattern.
+#
+# Scope note: only drafts exec_narrative and next_milestone_text.
+# Milestone status, exec RAG, delivery %, and dates stay human-owned —
+# those are situational judgment calls the AI shouldn't anchor.
+def draft_initiative_checkin(context: dict) -> Optional[dict]:
+    """Ask Claude Sonnet to draft an exec narrative and next-milestone text
+    from the initiative's current state and prior check-in context.
+
+    `context` should be a dict with keys:
+      title, description, effort_estimate,
+      status, milestone_status, exec_rag, progress_pct,
+      previous_narrative (last saved), previous_milestone_text (last saved),
+      next_milestone_date,
+      linked_krs (list of {title, unit, current, target}),
+      days_since_last_update (approximate, may be None)
+
+    Returns:
+      { "exec_narrative": "...", "next_milestone_text": "..." }
+    Or None on API failure.
+    """
+    client = _get_client()
+    if client is None:
+        return None
+
+    # Format linked KRs for the prompt
+    linked_krs_txt = ""
+    for kr in context.get("linked_krs", []) or []:
+        _cur = kr.get("current")
+        _tgt = kr.get("target")
+        linked_krs_txt += (
+            f"\n  - {kr.get('title', '?')}: current {_cur}, target {_tgt} "
+            f"{kr.get('unit', '')}"
+        )
+    if not linked_krs_txt:
+        linked_krs_txt = "\n  (none linked)"
+
+    days_text = ""
+    _days = context.get("days_since_last_update")
+    if _days is not None:
+        days_text = f"\nDays since last check-in: {_days}"
+
+    prompt = f"""You are drafting a status check-in for an initiative on behalf of the PM. Your job is to produce a first-draft exec narrative and next-milestone description that the PM will review and edit. This is a working draft, not the final artifact — the PM has the situational context you don't.
+
+INITIATIVE CONTEXT
+Title: {context.get('title', '?')}
+Description: {context.get('description', '(none)')}
+Effort estimate: {context.get('effort_estimate', 'unspecified')}
+Current status: {context.get('status', 'unspecified')}
+Milestone status (team view): {context.get('milestone_status', 'not set')}
+Exec RAG (exec-facing view): {context.get('exec_rag', 'not set')}
+Delivery progress: {context.get('progress_pct', 0)}%
+Next milestone date (planned): {context.get('next_milestone_date', '(not set)')}
+Linked KRs:{linked_krs_txt}{days_text}
+
+PREVIOUS EXEC NARRATIVE (last saved):
+{context.get('previous_narrative') or '(none — this may be the first check-in)'}
+
+PREVIOUS NEXT-MILESTONE TEXT (last saved):
+{context.get('previous_milestone_text') or '(none)'}
+
+TASK
+Draft the two text fields:
+
+1. exec_narrative — a 3-5 sentence narrative for a VP reader. Update the previous narrative to reflect current state. If milestone_status or exec_rag suggest concern, name the specific concern. If progress has advanced, name what actually moved. If a specific customer, team, or blocker is likely relevant, name it (drawing from the previous narrative). Do NOT invent facts you don't have evidence for. If you can't say why something changed, don't claim a reason.
+
+2. next_milestone_text — one sentence describing the concrete next thing that would move this initiative forward. Should be specific and actionable, not vague like "continue progress."
+
+WRITING PRINCIPLES
+- Match the voice of a competent PM — direct, specific, honest about risk.
+- If the status suggests trouble but the previous narrative was rosy, acknowledge the gap. Don't perpetuate soft-speak.
+- If you don't have context for a claim, say what you know rather than making it up.
+- Do NOT open with "This update covers..." or other meta-language.
+- Keep exec_narrative under 120 words. Keep next_milestone_text under 25 words.
+
+Return ONLY a JSON object. No prose, no markdown, no code fences.
+
+Structure:
+{{
+  "exec_narrative": "...",
+  "next_milestone_text": "..."
+}}
+
+Draft now."""
+
+    try:
+        response = client.messages.create(
+            model=MODEL_SONNET,
+            max_tokens=800,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw_text = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                raw_text += block.text
+
+        cleaned = raw_text.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.split("\n")
+            cleaned = "\n".join(lines[1:-1]) if len(lines) > 2 else cleaned
+
+        parsed = json.loads(cleaned)
+        if not isinstance(parsed, dict):
+            return None
+
+        return {
+            "exec_narrative": str(parsed.get("exec_narrative", "")).strip(),
+            "next_milestone_text": str(parsed.get("next_milestone_text", "")).strip(),
+        }
+
+    except Exception as e:
+        print(f"[AI] draft_initiative_checkin failed: {e}")
+        return None
