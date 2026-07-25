@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terry Dougan | Operating Model Architect</title>
+  <meta name="description" content="Operating model architect for complex technology organizations. Portfolio governance, AI-enabled decision support, and the systems that make execution predictable at scale.">
+
+  <!-- Favicons & app icons -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <meta name="theme-color" content="#0a1120">
+
+  <!-- Social share preview (Open Graph + Twitter) -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Terry Dougan | Operating Model Architect">
+  <meta property="og:description" content="Turning capability into coordinated execution. Operating model design, portfolio governance, and AI-enabled decision support for complex technology organizations.">
+  <meta property="og:url" content="https://terrydougan.com/">
+  <meta property="og:image" content="https://terrydougan.com/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Terry Dougan — Operating Model Architect, Dougan Consulting LLC">
+  <meta property="og:site_name" content="Terry Dougan">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Terry Dougan | Operating Model Architect">
+  <meta name="twitter:description" content="Turning capability into coordinated execution. Operating model design, portfolio governance, and AI-enabled decision support.">
+  <meta name="twitter:image" content="https://terrydougan.com/og-image.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink:        #0a1120;
+      --ink-2:      #111c33;
+      --slate:      #475569;
+      --slate-2:    #64748b;
+      --line:       #e4e9f2;
+      --paper:      #f7f9fc;
+      --white:      #ffffff;
+      --accent:     #2563eb;
+      --accent-2:   #06b6d4;
+      --accent-deep:#1e40af;
+      --glow:       rgba(37, 99, 235, 0.18);
+      --maxw:       1120px;
+      --ease:       cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: var(--ink);
+      background: var(--white);
+      line-height: 1.6;
+      font-size: 16px;
+      overflow-x: hidden;
+    }
+
+    a { color: var(--accent); text-decoration: none; transition: color .2s; }
+
+    .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 32px; }
+
+    h1, h2, h3, .display {
+      font-family: 'Outfit', sans-serif;
+      color: var(--ink);
+      letter-spacing: -0.02em;
+      line-height: 1.08;
+    }
+
+    .eyebrow {
+      font-family: 'Outfit', sans-serif;
+      font-size: 12.5px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent);
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .eyebrow::before {
+      content: '';
+      width: 28px; height: 2px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      border-radius: 2px;
+    }
+
+    /* ---------- NAV ---------- */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      transition: background .35s var(--ease), box-shadow .35s var(--ease), border-color .35s;
+      border-bottom: 1px solid transparent;
+    }
+    nav.scrolled {
+      background: rgba(255,255,255,0.82);
+      backdrop-filter: saturate(180%) blur(14px);
+      -webkit-backdrop-filter: saturate(180%) blur(14px);
+      border-bottom: 1px solid var(--line);
+    }
+    .nav-inner {
+      max-width: var(--maxw); margin: 0 auto; padding: 18px 32px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .brand { display: flex; align-items: center; gap: 11px; font-family: 'Outfit'; font-weight: 800; font-size: 17px; color: var(--ink); letter-spacing: -0.01em; }
+    .brand .mark { width: 30px; height: 30px; flex: 0 0 auto; }
+    .nav-links { display: flex; gap: 30px; align-items: center; }
+    .nav-links a { font-size: 14.5px; font-weight: 500; color: var(--slate); }
+    .nav-links a:hover { color: var(--ink); }
+    .nav-cta {
+      font-family: 'Outfit'; font-weight: 600; font-size: 14px;
+      color: var(--white) !important; background: var(--ink);
+      padding: 9px 18px; border-radius: 100px; transition: transform .2s var(--ease), background .2s;
+    }
+    .nav-cta:hover { background: var(--accent-deep); transform: translateY(-1px); }
+    .nav-toggle { display: none; }
+
+    /* ---------- HERO ---------- */
+    header {
+      position: relative; overflow: hidden;
+      background: var(--ink);
+      color: var(--white);
+      padding: 168px 0 110px;
+    }
+    .hero-grid-bg {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px);
+      background-size: 46px 46px;
+      mask-image: radial-gradient(ellipse 80% 70% at 70% 30%, #000 30%, transparent 75%);
+      -webkit-mask-image: radial-gradient(ellipse 80% 70% at 70% 30%, #000 30%, transparent 75%);
+    }
+    .hero-orb {
+      position: absolute; border-radius: 50%; filter: blur(70px); pointer-events: none;
+    }
+    .orb-1 { width: 520px; height: 520px; top: -160px; right: -120px;
+      background: radial-gradient(circle, rgba(37,99,235,0.55) 0%, transparent 70%); }
+    .orb-2 { width: 420px; height: 420px; bottom: -180px; left: -100px;
+      background: radial-gradient(circle, rgba(6,182,212,0.32) 0%, transparent 70%); }
+
+    .hero-inner { position: relative; z-index: 2; display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 56px; align-items: center; }
+    .hero .eyebrow { color: #7dd3fc; }
+    .hero .eyebrow::before { background: linear-gradient(90deg, #38bdf8, #818cf8); }
+    .hero h1 {
+      color: var(--white);
+      font-size: clamp(38px, 5.2vw, 60px);
+      font-weight: 800;
+      margin: 22px 0 24px;
+      max-width: 16ch;
+    }
+    .hero h1 .grad {
+      background: linear-gradient(100deg, #60a5fa 10%, #22d3ee 90%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .hero p.lede {
+      font-size: 18.5px; color: #c5cfde; max-width: 52ch; line-height: 1.7;
+      font-weight: 400;
+    }
+    .hero-actions { display: flex; gap: 16px; margin-top: 36px; flex-wrap: wrap; }
+    .btn {
+      font-family: 'Outfit'; font-weight: 600; font-size: 15px;
+      padding: 14px 26px; border-radius: 100px; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 9px;
+      transition: transform .2s var(--ease), box-shadow .25s var(--ease), background .2s;
+    }
+    .btn-primary {
+      background: linear-gradient(100deg, var(--accent), var(--accent-2));
+      color: #fff; box-shadow: 0 8px 24px rgba(37,99,235,0.4);
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 14px 34px rgba(37,99,235,0.5); color:#fff; }
+    .btn-ghost { background: rgba(255,255,255,0.06); color: #e2e8f0; border: 1px solid rgba(255,255,255,0.18); }
+    .btn-ghost:hover { background: rgba(255,255,255,0.12); transform: translateY(-2px); color:#fff; }
+    .btn svg { width: 16px; height: 16px; }
+
+    /* hero diagram */
+    .hero-visual { position: relative; }
+    .hero-svg { width: 100%; height: auto; display: block; overflow: visible; }
+    .node-pulse { transform-box: fill-box; transform-origin: center; animation: pulse 3.2s var(--ease) infinite; }
+    .node-pulse.d1 { animation-delay: .0s; }
+    .node-pulse.d2 { animation-delay: .5s; }
+    .node-pulse.d3 { animation-delay: 1s; }
+    .node-pulse.d4 { animation-delay: 1.5s; }
+    .node-pulse.d5 { animation-delay: 2s; }
+    @keyframes pulse { 0%,100%{opacity:.55; r:5;} 50%{opacity:1; r:7;} }
+    .flow { stroke-dasharray: 6 8; animation: flow 2.4s linear infinite; }
+    @keyframes flow { to { stroke-dashoffset: -28; } }
+
+    /* ---------- MARQUEE / CREDIBILITY STRIP ---------- */
+    .strip { background: var(--ink-2); color: #94a3b8; padding: 22px 0; border-top: 1px solid rgba(255,255,255,0.06); }
+    .strip-inner { display: flex; flex-wrap: wrap; gap: 14px 40px; justify-content: center; align-items: center; }
+    .strip span { font-family:'Outfit'; font-weight:600; font-size: 14px; letter-spacing: .02em; display:flex; align-items:center; gap:10px; }
+    .strip span::before { content:''; width:6px; height:6px; border-radius:50%; background: var(--accent-2); }
+
+    /* ---------- SECTION SHELL ---------- */
+    section.block { padding: 104px 0; position: relative; }
+    .section-head { max-width: 680px; margin-bottom: 56px; }
+    .section-head h2 { font-size: clamp(30px, 4vw, 42px); font-weight: 800; margin: 18px 0 0; }
+    .section-head p { color: var(--slate); font-size: 18px; margin-top: 18px; }
+
+    /* ---------- QUESTIONS / PROBLEM ---------- */
+    .problem { background: var(--paper); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .q-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-bottom: 52px; }
+    .q-card {
+      background: var(--white); border: 1px solid var(--line); border-radius: 16px;
+      padding: 30px 26px; position: relative; overflow: hidden;
+      transition: transform .3s var(--ease), box-shadow .3s var(--ease), border-color .3s;
+    }
+    .q-card:hover { transform: translateY(-4px); box-shadow: 0 18px 40px rgba(15,23,42,0.08); border-color: #c9d6ef; }
+    .q-card .qnum { font-family:'Outfit'; font-weight:800; font-size:14px; color: var(--accent); letter-spacing:.04em; }
+    .q-card p { font-family:'Outfit'; font-weight:600; font-size: 20px; color: var(--ink); line-height:1.3; margin-top:14px; }
+    .q-card::after {
+      content:''; position:absolute; right:-30px; bottom:-30px; width:110px; height:110px;
+      background: radial-gradient(circle, var(--glow), transparent 70%); opacity:.6;
+    }
+    .about-text { max-width: 760px; }
+    .about-text p { font-size: 19px; color: #334155; line-height: 1.85; }
+    .about-text strong { color: var(--ink); font-weight: 600; }
+
+    /* ---------- ENGAGEMENTS ---------- */
+    .eng-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
+    .eng-card {
+      position: relative; padding: 34px; border-radius: 18px; overflow: hidden;
+      background: var(--white); border: 1px solid var(--line);
+      display: flex; flex-direction: column;
+      transition: transform .35s var(--ease), box-shadow .35s var(--ease), border-color .35s;
+    }
+    .eng-card::before {
+      content:''; position:absolute; top:0; left:0; right:0; height:3px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      transform: scaleX(0); transform-origin: left; transition: transform .4s var(--ease);
+    }
+    .eng-card:hover { transform: translateY(-5px); box-shadow: 0 22px 50px rgba(15,23,42,0.1); border-color:#c9d6ef; }
+    .eng-card:hover::before { transform: scaleX(1); }
+    .eng-icon {
+      width: 54px; height: 54px; border-radius: 14px; margin-bottom: 22px;
+      display: grid; place-items: center;
+      background: linear-gradient(135deg, #eff5ff, #e0edff);
+      border: 1px solid #d6e4ff;
+    }
+    .eng-icon svg { width: 26px; height: 26px; stroke: var(--accent-deep); }
+    .eng-card h3 { font-size: 21px; font-weight: 700; margin-bottom: 12px; }
+    .eng-sub { color: var(--ink); font-weight: 600; font-size: 15.5px; line-height: 1.5; margin-bottom: 14px; }
+    .eng-body { color: var(--slate); font-size: 15px; line-height: 1.7; margin-bottom: 18px; }
+    .eng-proof {
+      margin-top: auto; font-size: 13px; line-height: 1.6; color: #51607a;
+      background: #f3f7fd; border: 1px solid #e2ebf8; border-radius: 11px; padding: 13px 15px;
+    }
+    .proof-label {
+      display: inline-block; font-family: 'Outfit', sans-serif; font-weight: 700;
+      font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+      color: var(--accent); margin-right: 9px;
+    }
+
+    /* ---------- STORIES / METRICS ---------- */
+    .metrics { background: var(--ink); color: #fff; overflow: hidden; position: relative; }
+    .metrics .hero-grid-bg { mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, #000 20%, transparent 80%); -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, #000 20%, transparent 80%); }
+    .metrics .section-head h2 { color:#fff; }
+    .metrics .section-head p { color:#aebbcf; }
+    .metrics .eyebrow { color:#7dd3fc; }
+    .metrics .eyebrow::before { background: linear-gradient(90deg,#38bdf8,#818cf8); }
+    .m-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; position: relative; z-index: 2; }
+    .m-card {
+      padding: 30px 26px; border-radius: 18px;
+      background: linear-gradient(160deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,0.1);
+      transition: transform .35s var(--ease), border-color .35s, background .35s;
+    }
+    .m-card:hover { transform: translateY(-5px); border-color: rgba(125,211,252,0.5); background: linear-gradient(160deg, rgba(56,189,248,0.12), rgba(255,255,255,0.02)); }
+    .m-num { font-family:'Outfit'; font-weight:900; font-size: 44px; line-height:1;
+      background: linear-gradient(100deg,#60a5fa,#22d3ee); -webkit-background-clip:text; background-clip:text; color:transparent; }
+    .m-title { font-family:'Outfit'; font-weight:700; font-size: 17px; margin: 16px 0 10px; color:#fff; }
+    .m-text { font-size: 14px; color:#9fb0c7; line-height:1.65; }
+
+    /* ---------- APPROACH ---------- */
+    .approach-grid { display:grid; grid-template-columns: repeat(3,1fr); gap: 28px; }
+    .step { position: relative; padding-top: 26px; }
+    .step .snum {
+      font-family:'Outfit'; font-weight:800; font-size: 15px; color: var(--accent);
+      width: 40px; height:40px; border-radius:50%; border:2px solid #d6e4ff;
+      display:grid; place-items:center; background: var(--white); margin-bottom:18px;
+    }
+    .step h3 { font-size: 19px; margin-bottom: 10px; }
+    .step p { color: var(--slate); font-size: 15.5px; line-height:1.7; }
+    .step::before { content:''; position:absolute; top: 46px; left:46px; right:-14px; height:2px; background: linear-gradient(90deg,#d6e4ff, transparent); }
+    .approach-grid .step:last-child::before { display:none; }
+
+    /* ---------- BUILDING / PROJECTS ---------- */
+    .building { background: var(--paper); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .proj-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 24px; }
+    .proj-card {
+      flex: 1 1 300px; max-width: 360px;
+      display: flex; flex-direction: column; padding: 30px;
+      border: 1px solid var(--line); border-radius: 18px; background: var(--white);
+      transition: transform .35s var(--ease), box-shadow .35s var(--ease), border-color .35s;
+    }
+    .proj-card:hover { transform: translateY(-5px); box-shadow: 0 22px 50px rgba(15,23,42,.1); border-color:#c9d6ef; }
+    .proj-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
+    .proj-tag {
+      font-family:'Outfit'; font-weight:700; font-size:11.5px; letter-spacing:.07em; text-transform:uppercase;
+      color: var(--accent-deep); background: linear-gradient(135deg,#eff5ff,#e0edff);
+      border:1px solid #d6e4ff; padding:5px 11px; border-radius:100px;
+    }
+    .proj-stack { font-size:12.5px; color: var(--slate-2); font-weight:500; }
+    .proj-card h3 { font-size:20px; margin-bottom:10px; }
+    .proj-card p { color: var(--slate); font-size:15px; line-height:1.65; flex:1; }
+    .proj-link { margin-top:18px; font-family:'Outfit'; font-weight:600; font-size:14.5px; color: var(--accent); display:inline-flex; align-items:center; gap:7px; }
+    .proj-link svg { width:15px; height:15px; transition: transform .2s var(--ease); }
+    .proj-card:hover .proj-link svg { transform: translateX(3px); }
+
+    /* ---------- CTA ---------- */
+    .cta { padding: 0 0 110px; }
+    .cta-card {
+      position: relative; overflow: hidden; border-radius: 28px;
+      background: linear-gradient(135deg, var(--ink) 0%, #16264a 60%, var(--accent-deep) 130%);
+      color:#fff; padding: 70px 60px; text-align:center;
+    }
+    .cta-card .hero-grid-bg { mask-image: radial-gradient(ellipse 70% 90% at 50% 0%, #000, transparent 75%); -webkit-mask-image: radial-gradient(ellipse 70% 90% at 50% 0%, #000, transparent 75%); }
+    .cta-card h2 { color:#fff; font-size: clamp(30px,4vw,44px); position:relative; z-index:2; }
+    .cta-card p { color:#bcc9de; font-size:18px; max-width: 56ch; margin: 18px auto 34px; position:relative; z-index:2; }
+    .cta-actions { position:relative; z-index:2; display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
+
+    /* contact form (on the dark CTA card) */
+    .contact-grid { position: relative; z-index: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 50px; align-items: start; text-align: left; }
+    .contact-pitch .eyebrow { color:#7dd3fc; }
+    .contact-pitch h2 { text-align: left; }
+    .contact-pitch p { color:#bcc9de; font-size:17px; margin: 18px 0 28px; max-width: 44ch; }
+    .contact-alt { display: flex; flex-direction: column; gap: 14px; }
+    .contact-alt a { color:#cdd9ec; font-size:14.5px; font-weight:500; display:inline-flex; align-items:center; gap:11px; }
+    .contact-alt a:hover { color:#fff; }
+    .contact-alt svg { width:18px; height:18px; opacity:.85; flex:0 0 auto; }
+    .contact-form { display: grid; gap: 16px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .field { display: grid; gap: 7px; }
+    .contact-form label { font-family:'Outfit'; font-size:13px; font-weight:600; color:#aebbcf; }
+    .contact-form input, .contact-form textarea {
+      width:100%; font-family:'Inter'; font-size:15px; color:#fff;
+      background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.16);
+      border-radius:12px; padding:12px 14px;
+      transition: border-color .2s, box-shadow .2s, background .2s;
+    }
+    .contact-form textarea { resize: vertical; min-height: 110px; }
+    .contact-form input::placeholder, .contact-form textarea::placeholder { color:#7e8ba3; }
+    .contact-form input:focus, .contact-form textarea:focus {
+      outline:none; border-color:#38bdf8; background: rgba(255,255,255,0.1);
+      box-shadow: 0 0 0 3px rgba(56,189,248,0.18);
+    }
+    .contact-form button { justify-content:center; width:100%; margin-top:4px; cursor:pointer; border:none; }
+    .contact-form button:disabled { opacity:.6; cursor:default; }
+    .form-status { font-size:14px; min-height:20px; font-weight:500; line-height:1.5; }
+    .form-status.ok { color:#6ee7b7; }
+    .form-status.err { color:#fca5a5; }
+    .hp { position:absolute !important; left:-9999px; opacity:0; height:0; width:0; }
+
+    /* ---------- FOOTER ---------- */
+    footer { background: var(--paper); border-top: 1px solid var(--line); padding: 54px 0; }
+    .foot-inner { display:flex; justify-content:space-between; align-items:center; gap: 24px; flex-wrap: wrap; }
+    .foot-brand { display:flex; align-items:center; gap:11px; font-family:'Outfit'; font-weight:800; color:var(--ink); font-size:16px; }
+    .foot-meta { color: var(--slate-2); font-size: 14px; }
+    .foot-links { display:flex; gap: 22px; }
+    .foot-links a { color: var(--slate); font-weight:500; font-size:14.5px; display:flex; align-items:center; gap:7px; }
+    .foot-links a:hover { color: var(--accent); }
+    .foot-links svg { width:16px; height:16px; }
+
+    /* ---------- REVEAL ANIM ---------- */
+    .reveal { opacity:0; transform: translateY(22px); transition: opacity .7s var(--ease), transform .7s var(--ease); }
+    .reveal.in { opacity:1; transform: none; }
+    .reveal.d1 { transition-delay:.08s;} .reveal.d2{transition-delay:.16s;} .reveal.d3{transition-delay:.24s;} .reveal.d4{transition-delay:.32s;} .reveal.d5{transition-delay:.40s;} .reveal.d6{transition-delay:.48s;}
+
+    /* ---------- RESPONSIVE ---------- */
+    @media (max-width: 940px) {
+      .hero-inner { grid-template-columns: 1fr; gap: 40px; }
+      .hero-visual { max-width: 460px; }
+      .q-grid, .eng-grid, .m-grid, .approach-grid, .proj-grid { grid-template-columns: 1fr 1fr; }
+      .step::before { display:none; }
+    }
+    @media (max-width: 720px) {
+      .nav-links { display:none; }
+      .wrap { padding: 0 22px; }
+      header { padding: 130px 0 80px; }
+      section.block { padding: 72px 0; }
+      .q-grid, .eng-grid, .m-grid, .approach-grid, .proj-grid { grid-template-columns: 1fr; }
+      .cta-card { padding: 50px 26px; }
+      .contact-grid { grid-template-columns: 1fr; gap: 36px; }
+      .form-row { grid-template-columns: 1fr; }
+      .foot-inner { flex-direction: column; text-align:center; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav id="nav">
+    <div class="nav-inner">
+      <a href="#top" class="brand">
+        <svg class="mark" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="1" width="30" height="30" rx="8" fill="url(#mg)"/>
+          <text x="16" y="21.6" text-anchor="middle" font-family="'Outfit', 'Segoe UI', sans-serif" font-size="14" font-weight="800" letter-spacing="-0.5" fill="#fff">TD</text>
+          <defs><linearGradient id="mg" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#2563eb"/><stop offset="1" stop-color="#06b6d4"/></linearGradient></defs>
+        </svg>
+        Terry Dougan
+      </a>
+      <div class="nav-links">
+        <a href="#engagements">Engagements</a>
+        <a href="#results">Results</a>
+        <a href="#building">Building</a>
+        <a href="#approach">Approach</a>
+        <a href="#contact" class="nav-cta">Let's talk</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <header id="top" class="hero">
+    <div class="hero-grid-bg"></div>
+    <div class="hero-orb orb-1"></div>
+    <div class="hero-orb orb-2"></div>
+    <div class="wrap hero-inner">
+      <div>
+        <span class="eyebrow">Operating Model Architecture</span>
+        <h1>Turning capability into <span class="grad">coordinated execution.</span></h1>
+        <p class="lede">I'm the operator CTOs and CPOs bring in when great ideas, mountains of data, and too many voices aren't yet adding up to predictable outcomes — and they need someone to build the system that makes it click.</p>
+        <div class="hero-actions">
+          <a href="#contact" class="btn btn-primary">
+            Start a conversation
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <a href="#results" class="btn btn-ghost">See the work</a>
+        </div>
+      </div>
+
+      <!-- HERO DIAGRAM: fragmented inputs → governed system -->
+      <div class="hero-visual">
+        <svg class="hero-svg" viewBox="0 0 460 380" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <defs>
+            <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+              <stop stop-color="#38bdf8" stop-opacity=".9"/><stop offset="1" stop-color="#818cf8" stop-opacity=".4"/>
+            </linearGradient>
+            <linearGradient id="core" x1="0" y1="0" x2="1" y2="1">
+              <stop stop-color="#2563eb"/><stop offset="1" stop-color="#06b6d4"/>
+            </linearGradient>
+            <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+              <feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+
+          <!-- connecting flows to core -->
+          <g stroke="url(#edge)" stroke-width="1.6">
+            <path class="flow" d="M70 60 C 170 90, 180 160, 230 190"/>
+            <path class="flow" d="M392 56 C 300 96, 300 150, 230 190"/>
+            <path class="flow" d="M52 200 C 140 200, 160 190, 230 190"/>
+            <path class="flow" d="M84 320 C 170 290, 180 230, 230 190"/>
+            <path class="flow" d="M386 318 C 300 290, 290 230, 230 190"/>
+          </g>
+
+          <!-- outer fragmented nodes -->
+          <g>
+            <circle class="node-pulse d1" cx="70" cy="60" r="6" fill="#38bdf8"/>
+            <circle class="node-pulse d2" cx="392" cy="56" r="6" fill="#818cf8"/>
+            <circle class="node-pulse d3" cx="52" cy="200" r="6" fill="#22d3ee"/>
+            <circle class="node-pulse d4" cx="84" cy="320" r="6" fill="#60a5fa"/>
+            <circle class="node-pulse d5" cx="386" cy="318" r="6" fill="#38bdf8"/>
+          </g>
+
+          <!-- small labels as abstract bars -->
+          <g fill="rgba(255,255,255,0.14)">
+            <rect x="40" y="78" width="60" height="6" rx="3"/>
+            <rect x="362" y="74" width="60" height="6" rx="3"/>
+            <rect x="22" y="218" width="60" height="6" rx="3"/>
+            <rect x="54" y="338" width="60" height="6" rx="3"/>
+            <rect x="356" y="336" width="60" height="6" rx="3"/>
+          </g>
+
+          <!-- CORE: the operating model -->
+          <g filter="url(#soft)">
+            <circle cx="230" cy="190" r="58" fill="url(#core)" opacity=".18"/>
+            <circle cx="230" cy="190" r="42" fill="url(#core)"/>
+          </g>
+          <g transform="translate(230 190)" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none">
+            <path d="M-15 12 V -6 l 15 -12 15 12 V 12" />
+            <path d="M-15 12 H 15"/>
+          </g>
+          <circle cx="230" cy="190" r="56" stroke="rgba(255,255,255,0.25)" stroke-width="1.2" fill="none"/>
+          <circle cx="230" cy="190" r="72" stroke="rgba(255,255,255,0.1)" stroke-width="1" fill="none" stroke-dasharray="3 7"/>
+        </svg>
+      </div>
+    </div>
+  </header>
+
+  <!-- CREDIBILITY STRIP -->
+  <div class="strip">
+    <div class="wrap strip-inner">
+      <span>20+ years scaling tech orgs</span>
+      <span>$400M+ portfolios governed</span>
+      <span>30+ AI initiatives to production</span>
+      <span>Dougan Consulting LLC · Michigan</span>
+    </div>
+  </div>
+
+  <!-- PROBLEM / ABOUT -->
+  <section class="block problem" id="about">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="eyebrow">The problem I solve</span>
+        <h2>Scale exposes the seams.</h2>
+      </div>
+      <div class="q-grid">
+        <div class="q-card reveal d1"><div class="qnum">01</div><p>Lots of great ideas, but lacking cohesion?</p></div>
+        <div class="q-card reveal d2"><div class="qnum">02</div><p>Lots of data, but not enough insight?</p></div>
+        <div class="q-card reveal d3"><div class="qnum">03</div><p>Lots of voices, but no clear decision framework?</p></div>
+      </div>
+      <div class="about-text reveal d2">
+        <p>Over 20 years, I've built <strong>Product Operations, Technical Program Management, and portfolio governance</strong> functions at scaled enterprises, led <strong>$400M+ portfolio rationalizations</strong>, and governed <strong>30+ AI initiatives to production</strong>. I work with executive teams on operating model design, portfolio governance, AI-driven decision support, and the systems that make execution predictable at scale.</p>
+        <p>I'm not a slides-only operator. I came up as a <strong>software developer and DBA</strong>, and I still build production AI apps today — with Python, Streamlit, and the Claude and OpenAI APIs. I can sit with the engineering team, not just the steering committee.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ENGAGEMENTS -->
+  <section class="block" id="engagements">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="eyebrow">Engagements</span>
+        <h2>Where I plug in.</h2>
+        <p>How I help product and technology leaders move from capability to coordinated, predictable execution.</p>
+      </div>
+      <div class="eng-grid">
+        <div class="eng-card reveal d1">
+          <div class="eng-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+          </div>
+          <h3>Operating Model &amp; PMO Design</h3>
+          <p class="eng-sub">Building the cadences, governance forums, and decision frameworks that let product and technology organizations execute at scale.</p>
+          <p class="eng-body">Most product and technology organizations don't lack talent — they lack the system that turns talent into coordinated outcomes. I design the planning rhythms, intake and prioritization processes, delivery standards, and accountability structures that give Product, Engineering, and executive leadership clarity on priorities, trade-offs, and outcomes.</p>
+          <p class="eng-proof"><span class="proof-label">Proof</span>Built Clarivate's Product &amp; Technology PMO from the ground up — unifying six fragmented teams across four business units, growing from 25 to 45, covering 1,000+ technologists and 60+ products.</p>
+        </div>
+        <div class="eng-card reveal d2">
+          <div class="eng-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>
+          </div>
+          <h3>Portfolio Governance &amp; Investment Strategy</h3>
+          <p class="eng-sub">Strategic prioritization, investment trade-off analysis, and capacity-aligned planning across complex R&amp;D portfolios.</p>
+          <p class="eng-body">When the portfolio gets too big to govern by intuition, leadership needs the analysis, scenario modeling, and decision frameworks that connect strategic intent to capacity and capital. I run the diagnostic, build the modeling, and surface the trade-offs that let executive teams reset investment allocation with confidence — not just for one budget cycle, but as a durable operating capability.</p>
+          <p class="eng-proof"><span class="proof-label">Proof</span>Led $400M+ portfolio rationalization across 200+ products post-acquisition — shifting strategic allocation from 10% to 35% and resetting product direction for years forward.</p>
+        </div>
+        <div class="eng-card reveal d3">
+          <div class="eng-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a4 4 0 0 0-4 4c0 1 .3 1.7.8 2.4C7 10.5 6 12 6 14a6 6 0 0 0 12 0c0-2-1-3.5-2.8-4.6.5-.7.8-1.4.8-2.4a4 4 0 0 0-4-4z"/><path d="M12 11v6M9.5 14h5"/></svg>
+          </div>
+          <h3>AI Program Leadership &amp; Integration</h3>
+          <p class="eng-sub">Governing AI initiatives to production at scale — and applying AI hands-on to operating model, planning, and decision support.</p>
+          <p class="eng-body">Most organizations are still learning the difference between AI strategy decks and AI in production. I bring both: the governance frameworks that let cross-geography teams ship AI initiatives responsibly at speed, and the hands-on practitioner's view of what AI actually means for how product and technology operations get done. The combination is rarer than it should be — and it's the difference between AI as a slide and AI as a working capability.</p>
+          <p class="eng-proof"><span class="proof-label">Proof</span>Governed 30+ AI initiatives to production at Clarivate (LLMs, RAG, Generative AI, customer-facing chatbots) and currently build production AI applications in Python, Streamlit, and the Claude and OpenAI APIs.</p>
+        </div>
+        <div class="eng-card reveal d4">
+          <div class="eng-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v3a6 6 0 0 0 6 6h3"/></svg>
+          </div>
+          <h3>Transformation Through Change</h3>
+          <p class="eng-sub">Operating continuity through M&amp;A, leadership transitions, and major reorganizations — the work most organizations underestimate until momentum is already gone.</p>
+          <p class="eng-body">M&amp;A integration, leadership turnover, and major reorganizations expose seams that work fine under stable conditions. I step in as the operating partner who holds delivery discipline, decision cadence, and team focus through the disruption — keeping execution moving while the organization works through the bigger changes. The goal isn't to prevent change; it's to make sure the change doesn't cost the momentum you've already built.</p>
+          <p class="eng-proof"><span class="proof-label">Proof</span>Partnered with three successive CPOs through the CPA Global acquisition by Clarivate — holding operating continuity from diligence through Day 1 readiness and post-merger integration across multiple business units.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- METRICS / ANCHOR STORIES -->
+  <section class="block metrics" id="results">
+    <div class="hero-grid-bg"></div>
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="eyebrow">Anchor stories</span>
+        <h2>Outcomes, at scale.</h2>
+        <p>A few places where the operating system I built reset what the organization could deliver.</p>
+      </div>
+      <div class="m-grid">
+        <div class="m-card reveal d1">
+          <div class="m-num">$400M</div>
+          <div class="m-title">Portfolio Rationalization</div>
+          <p class="m-text">Across 200+ products. Shifted strategic allocation from 10% to 35%, resetting product direction for years.</p>
+        </div>
+        <div class="m-card reveal d2">
+          <div class="m-num">83→92%</div>
+          <div class="m-title">Renewal Lift</div>
+          <p class="m-text">Connected product-usage analytics to renewal planning — lifting renewals 83→92% and 86→94% across two $60M+ ARR products.</p>
+        </div>
+        <div class="m-card reveal d3">
+          <div class="m-num">+20%</div>
+          <div class="m-title">Delivery Predictability</div>
+          <p class="m-text">Across six business segments — with ~30% less rework and ~20% faster release cycles through stronger SDLC discipline.</p>
+        </div>
+        <div class="m-card reveal d4">
+          <div class="m-num">30+</div>
+          <div class="m-title">AI Program Leadership</div>
+          <p class="m-text">Initiatives to production — LLMs, RAG, GenAI, chatbots — with delivery standards enabling cross-geography teams to execute at speed.</p>
+        </div>
+        <div class="m-card reveal d5">
+          <div class="m-num">25→45</div>
+          <div class="m-title">PMO Build</div>
+          <p class="m-text">Unified six fragmented teams into one function — scaling 25→45 across 1,000+ technologists and a $120M+ R&amp;D portfolio.</p>
+        </div>
+        <div class="m-card reveal d6">
+          <div class="m-num">~15</div>
+          <div class="m-title">Platform Consolidation</div>
+          <p class="m-text">Integration Hub across ~15 products. Common data model + API architecture. Build-once, deploy-across — less duplication, less complexity.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- APPROACH -->
+  <section class="block" id="approach">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="eyebrow">How I work</span>
+        <h2>From diagnosis to durable system.</h2>
+      </div>
+      <div class="approach-grid">
+        <div class="step reveal d1">
+          <div class="snum">1</div>
+          <h3>Diagnose the seams</h3>
+          <p>Map where ideas, data, and decisions break down — the friction between strategy and what actually ships.</p>
+        </div>
+        <div class="step reveal d2">
+          <div class="snum">2</div>
+          <h3>Design the operating model</h3>
+          <p>Build the cadences, governance forums, and decision frameworks that make the right call the default call.</p>
+        </div>
+        <div class="step reveal d3">
+          <div class="snum">3</div>
+          <h3>Embed &amp; hand off</h3>
+          <p>Stand up the analytics and rituals, prove them in motion, then leave a system the team runs without me.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BUILDING / PROJECTS -->
+  <section class="block building" id="building">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="eyebrow">Currently building</span>
+        <h2>I build with AI — not just about it.</h2>
+        <p>A working operating model needs working tools. These are things I'm prototyping and shipping hands-on, with Python, Streamlit, and the Claude and OpenAI APIs.</p>
+      </div>
+      <!-- EDIT: add more <div class="proj-card"> blocks here as you ship new projects; they'll flow and stay centered. -->
+      <div class="proj-grid">
+        <div class="proj-card reveal d1">
+          <div class="proj-top">
+            <span class="proj-tag">Prototype</span>
+            <span class="proj-stack">Python · Streamlit · Supabase</span>
+          </div>
+          <h3>OKR Planning App</h3>
+          <p>OKR planning for multi-team orgs — keeping delivery, impact, and executive signal as separate, deliberate measurements.</p>
+          <a href="https://github.com/terrydougan-ai/okr-planning-app" target="_blank" rel="noopener" class="proj-link">View on GitHub
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta" id="contact">
+    <div class="wrap">
+      <div class="cta-card reveal">
+        <div class="hero-grid-bg"></div>
+        <div class="contact-grid">
+          <div class="contact-pitch">
+            <span class="eyebrow">Let's talk</span>
+            <h2>Make execution predictable.</h2>
+            <p>If your organization has the talent and the ideas but execution still feels unpredictable, that's the gap I close. Tell me a bit about what you're working on — I read every message.</p>
+            <div class="contact-alt">
+              <a href="#" class="js-email">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>
+                Prefer email? Reach me directly
+              </a>
+              <a href="https://linkedin.com/in/terry-dougan-0aa8565" target="_blank" rel="noopener">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14zM8.34 17V10.4H6.16V17h2.18zM7.25 9.5a1.27 1.27 0 1 0 0-2.54 1.27 1.27 0 0 0 0 2.54zM18 17v-3.62c0-1.93-1.03-2.83-2.41-2.83-1.11 0-1.6.61-1.88 1.04V10.4h-2.18V17h2.18v-3.68c0-.97.18-1.9 1.38-1.9 1.18 0 1.2 1.1 1.2 1.96V17H18z"/></svg>
+                Connect on LinkedIn
+              </a>
+            </div>
+          </div>
+
+          <form class="contact-form" id="contactForm" novalidate>
+            <!-- Web3Forms: get a FREE access key at https://web3forms.com (enter the email where you want
+                 submissions delivered; the key is tied to it). Paste the key as the value below. -->
+            <input type="hidden" name="access_key" value="fed7fff8-b829-45db-b4cf-ee237113aebe">
+            <input type="hidden" name="subject" value="New inquiry from terrydougan.com">
+            <input type="hidden" name="from_name" value="terrydougan.com">
+            <!-- spam honeypot: bots tick this hidden box; humans never see it -->
+            <input type="checkbox" name="botcheck" class="hp" tabindex="-1" autocomplete="off">
+
+            <div class="form-row">
+              <div class="field">
+                <label for="cf-name">Name</label>
+                <input id="cf-name" name="name" type="text" placeholder="Your name" required>
+              </div>
+              <div class="field">
+                <label for="cf-email">Email</label>
+                <input id="cf-email" name="email" type="email" placeholder="you@company.com" required>
+              </div>
+            </div>
+            <div class="field">
+              <label for="cf-company">Company <span style="font-weight:400;color:#7e8ba3;">(optional)</span></label>
+              <input id="cf-company" name="company" type="text" placeholder="Where you work">
+            </div>
+            <div class="field">
+              <label for="cf-message">How can I help?</label>
+              <textarea id="cf-message" name="message" placeholder="A sentence or two about what you're working on." required></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary" id="cf-submit">
+              Send message
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+            <div class="form-status" id="cf-status" role="status" aria-live="polite"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="wrap foot-inner">
+      <div>
+        <div class="foot-brand">
+          <svg width="26" height="26" viewBox="0 0 32 32"><rect x="1" y="1" width="30" height="30" rx="8" fill="url(#fg)"/><text x="16" y="21.6" text-anchor="middle" font-family="'Outfit', 'Segoe UI', sans-serif" font-size="14" font-weight="800" letter-spacing="-0.5" fill="#fff">TD</text><defs><linearGradient id="fg" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#2563eb"/><stop offset="1" stop-color="#06b6d4"/></linearGradient></defs></svg>
+          Terry Dougan
+        </div>
+        <p class="foot-meta" style="margin-top:8px;">Dougan Consulting LLC · Michigan · © 2026</p>
+      </div>
+      <div class="foot-links">
+        <a href="#" class="js-email">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>
+          Email
+        </a>
+        <a href="https://linkedin.com/in/terry-dougan-0aa8565" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14zM8.34 17V10.4H6.16V17h2.18zM7.25 9.5a1.27 1.27 0 1 0 0-2.54 1.27 1.27 0 0 0 0 2.54zM18 17v-3.62c0-1.93-1.03-2.83-2.41-2.83-1.11 0-1.6.61-1.88 1.04V10.4h-2.18V17h2.18v-3.68c0-.97.18-1.9 1.38-1.9 1.18 0 1.2 1.1 1.2 1.96V17H18z"/></svg>
+          LinkedIn
+        </a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // sticky nav state
+    const nav = document.getElementById('nav');
+    const onScroll = () => nav.classList.toggle('scrolled', window.scrollY > 24);
+    onScroll(); window.addEventListener('scroll', onScroll, { passive: true });
+
+    // scroll reveal
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+    // email obfuscation — assembled in-browser so the address never sits in the page source
+    (function () {
+      var user = ['dougan', 'consultingllc'].join('');
+      var domain = ['gmail', 'com'].join('.');
+      var addr = user + String.fromCharCode(64) + domain;
+      document.querySelectorAll('.js-email').forEach(function (el) {
+        el.setAttribute('href', 'mai' + 'lto:' + addr);
+      });
+    })();
+
+    // contact form -> Web3Forms (no email address exposed in the page)
+    (function () {
+      var form = document.getElementById('contactForm');
+      if (!form) return;
+      var statusEl = document.getElementById('cf-status');
+      var btn = document.getElementById('cf-submit');
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        if (!form.checkValidity()) { form.reportValidity(); return; }
+        var data = Object.fromEntries(new FormData(form).entries());
+        if (data.access_key === 'YOUR_WEB3FORMS_ACCESS_KEY') {
+          statusEl.className = 'form-status err';
+          statusEl.textContent = 'The form isn’t configured yet — add your Web3Forms access key.';
+          return;
+        }
+        var label = btn.innerHTML;
+        statusEl.className = 'form-status';
+        statusEl.textContent = '';
+        btn.disabled = true;
+        btn.textContent = 'Sending…';
+        try {
+          var res = await fetch('https://api.web3forms.com/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify(data)
+          });
+          var json = await res.json();
+          if (json.success) {
+            statusEl.className = 'form-status ok';
+            statusEl.textContent = "Thanks — your message is on its way. I'll be in touch soon.";
+            form.reset();
+          } else {
+            statusEl.className = 'form-status err';
+            statusEl.textContent = (json.message || 'Something went wrong.') + ' You can also email me directly.';
+          }
+        } catch (err) {
+          statusEl.className = 'form-status err';
+          statusEl.textContent = 'Network error — please email me directly instead.';
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = label;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
