@@ -75,7 +75,23 @@ def load_all():
         "key_results": pd.DataFrame(sb.table("key_result").select("*").execute().data),
         "objectives": pd.DataFrame(sb.table("objective").select("*").execute().data),
         "org_units": pd.DataFrame(sb.table("org_unit").select("*").execute().data),
+        # Ambient signals — simulated Jira/Slack/calendar for demonstrating
+        # signal-native AI patterns. Loaded even if empty; individual
+        # initiatives may have no signal data.
+        "engineering_activity": _try_load_signals("engineering_activity"),
+        "team_message": _try_load_signals("team_message"),
+        "calendar_event": _try_load_signals("calendar_event"),
     }
+
+
+def _try_load_signals(table_name: str) -> pd.DataFrame:
+    """Load signals if the table exists; return empty DataFrame if not.
+    Kept graceful so the app still runs on databases without the signals
+    migration applied yet."""
+    try:
+        return pd.DataFrame(sb.table(table_name).select("*").execute().data)
+    except Exception:
+        return pd.DataFrame()
 
 
 def clear_cache():
@@ -389,6 +405,84 @@ for _, init in visible_sorted.iterrows():
             with st.expander("Project description", expanded=False):
                 st.write(init["description"])
 
+        # ---- Recent activity: simulated ambient signals ----
+        # Jira-ish, Slack-ish, and calendar signals scoped to this initiative.
+        # These would be integrated feeds in production — for this demo they're
+        # seeded to make the AI drafting demonstrably better. The expander is
+        # deliberately collapsed by default; only PMs curious about "what does
+        # the AI see?" will open it, but the presence is enough to demonstrate
+        # the pattern.
+        _eng_activity = data["engineering_activity"]
+        _team_msgs = data["team_message"]
+        _cal_events = data["calendar_event"]
+
+        _init_eng = _eng_activity[_eng_activity["initiative_id"] == init_id] if not _eng_activity.empty else pd.DataFrame()
+        _init_msgs = _team_msgs[_team_msgs["initiative_id"] == init_id] if not _team_msgs.empty else pd.DataFrame()
+        _init_events = _cal_events[_cal_events["initiative_id"] == init_id] if not _cal_events.empty else pd.DataFrame()
+
+        _total_signals = len(_init_eng) + len(_init_msgs) + len(_init_events)
+
+        if _total_signals > 0:
+            with st.expander(f"📡 Recent activity  ·  {_total_signals} signals", expanded=False):
+                st.caption(
+                    "Ambient signals scoped to this initiative — engineering "
+                    "activity, team messages, coordination events. The AI "
+                    "draft feature reads these when producing check-ins. "
+                    "_(Simulated for demo — production would integrate Jira, "
+                    "Slack, calendar.)_"
+                )
+
+                # Engineering activity
+                if not _init_eng.empty:
+                    st.markdown("**🛠 Engineering activity**")
+                    for _, _e in _init_eng.sort_values("occurred_at", ascending=False).iterrows():
+                        _when = pd.to_datetime(_e["occurred_at"])
+                        _days_ago = max(0, (pd.Timestamp.now(tz=_when.tz) - _when).days)
+                        _ref = f"`{_e['reference']}`  ·  " if _e.get("reference") else ""
+                        _actor = f"  ·  _{_e['actor']}_" if _e.get("actor") else ""
+                        st.markdown(
+                            f"<div style='margin:4px 0 4px 12px;font-size:0.88em'>"
+                            f"{_ref}{_e['description']}"
+                            f"<span style='color:#9CA3AF'>  ·  {_days_ago}d ago{_actor}</span>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+
+                # Team messages
+                if not _init_msgs.empty:
+                    st.markdown("**💬 Team messages**")
+                    _sentiment_dot = {
+                        "positive": "🟢", "neutral": "⚪", "concerned": "🟡", "escalation": "🔴",
+                    }
+                    for _, _m in _init_msgs.sort_values("posted_at", ascending=False).iterrows():
+                        _when = pd.to_datetime(_m["posted_at"])
+                        _days_ago = max(0, (pd.Timestamp.now(tz=_when.tz) - _when).days)
+                        _dot = _sentiment_dot.get(_m.get("sentiment") or "", "")
+                        _author = f"_{_m['author']}_" if _m.get("author") else ""
+                        st.markdown(
+                            f"<div style='margin:4px 0 4px 12px;font-size:0.88em'>"
+                            f"{_dot} <b>{_m['channel']}</b>  ·  {_author}: "
+                            f"&ldquo;{_m['body']}&rdquo;"
+                            f"<span style='color:#9CA3AF'>  ·  {_days_ago}d ago</span>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+
+                # Calendar events
+                if not _init_events.empty:
+                    st.markdown("**📅 Coordination events**")
+                    for _, _c in _init_events.sort_values("occurred_at", ascending=False).iterrows():
+                        _when = pd.to_datetime(_c["occurred_at"])
+                        _days_ago = max(0, (pd.Timestamp.now(tz=_when.tz) - _when).days)
+                        _outcome = f"  →  {_c['outcome']}" if _c.get("outcome") else ""
+                        st.markdown(
+                            f"<div style='margin:4px 0 4px 12px;font-size:0.88em'>"
+                            f"<b>{_c['title']}</b>{_outcome}"
+                            f"<span style='color:#9CA3AF'>  ·  {_days_ago}d ago</span>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+
         # ---- AI-native drafting: 'Draft with AI' button OUTSIDE the form ----
         # This inverts the default authorship. Instead of the PM writing the
         # exec narrative and next-milestone text and the AI reviewing, the
@@ -436,6 +530,14 @@ for _, init in visible_sorted.iterrows():
                         "next_milestone_date": str(init.get("next_milestone_date") or ""),
                         "linked_krs": _linked_krs_for_ai,
                         "days_since_last_update": None,  # Signal we don't have yet
+                        # --- Ambient signals ---
+                        # This is what makes the draft *signal-native* rather
+                        # than assisted. The AI reads engineering activity,
+                        # team messages, and coordination events — not just
+                        # PM-typed fields.
+                        "engineering_activity": _init_eng.sort_values("occurred_at", ascending=False).to_dict("records") if not _init_eng.empty else [],
+                        "team_messages": _init_msgs.sort_values("posted_at", ascending=False).to_dict("records") if not _init_msgs.empty else [],
+                        "calendar_events": _init_events.sort_values("occurred_at", ascending=False).to_dict("records") if not _init_events.empty else [],
                     }
                     with st.spinner("Drafting..."):
                         _draft = draft_initiative_checkin(_context)

@@ -715,20 +715,30 @@ def compute_kr_checkin_signature(checkin: dict) -> str:
 # and the AI reviewing, the AI drafts from available context and the PM
 # confirms or edits. This is the "authorship-native" pattern.
 #
+# When ambient signals (engineering activity, team messages, calendar events)
+# are present in the context, the function also moves toward "signal-native":
+# the AI reasons over Jira-ish, Slack-ish, and coordination signals rather
+# than just what the PM typed into the app. This is the pattern a
+# production-integrated version would use with real Jira/Slack/calendar APIs.
+#
 # Scope note: only drafts exec_narrative and next_milestone_text.
 # Milestone status, exec RAG, delivery %, and dates stay human-owned —
 # those are situational judgment calls the AI shouldn't anchor.
 def draft_initiative_checkin(context: dict) -> Optional[dict]:
     """Ask Claude Sonnet to draft an exec narrative and next-milestone text
-    from the initiative's current state and prior check-in context.
+    from the initiative's current state, prior check-in context, and
+    (when present) ambient signals.
 
-    `context` should be a dict with keys:
+    `context` may include the following keys:
       title, description, effort_estimate,
       status, milestone_status, exec_rag, progress_pct,
       previous_narrative (last saved), previous_milestone_text (last saved),
       next_milestone_date,
       linked_krs (list of {title, unit, current, target}),
-      days_since_last_update (approximate, may be None)
+      days_since_last_update (approximate, may be None),
+      engineering_activity (list of records, most-recent-first),
+      team_messages (list of records, most-recent-first),
+      calendar_events (list of records, most-recent-first).
 
     Returns:
       { "exec_narrative": "...", "next_milestone_text": "..." }
@@ -755,7 +765,66 @@ def draft_initiative_checkin(context: dict) -> Optional[dict]:
     if _days is not None:
         days_text = f"\nDays since last check-in: {_days}"
 
-    prompt = f"""You are drafting a status check-in for an initiative on behalf of the PM. Your job is to produce a first-draft exec narrative and next-milestone description that the PM will review and edit. This is a working draft, not the final artifact — the PM has the situational context you don't.
+    # Format ambient signals — these enable signal-native drafting.
+    # If no signals are present, we say so explicitly and the model relies
+    # only on the human-typed fields (assisted mode).
+    def _fmt_signal_time(iso_str: str) -> str:
+        """Convert ISO datetime to relative days-ago string."""
+        try:
+            import datetime as _dt
+            _when = _dt.datetime.fromisoformat(iso_str.replace("Z", "+00:00")) if isinstance(iso_str, str) else iso_str
+            _now = _dt.datetime.now(_when.tzinfo) if _when.tzinfo else _dt.datetime.now()
+            _delta = (_now - _when).days
+            return f"{max(0, _delta)}d ago"
+        except Exception:
+            return "recently"
+
+    eng_activity = context.get("engineering_activity", []) or []
+    team_msgs = context.get("team_messages", []) or []
+    cal_events = context.get("calendar_events", []) or []
+    total_signals = len(eng_activity) + len(team_msgs) + len(cal_events)
+
+    signals_txt = ""
+    if total_signals == 0:
+        signals_txt = (
+            "\n(No ambient signals available for this initiative — "
+            "reason only from the PM-facing fields above.)"
+        )
+    else:
+        signals_txt = f"\n\nAMBIENT SIGNALS ({total_signals} total)"
+        signals_txt += (
+            "\nThe following are Jira-ish, Slack-ish, and calendar signals "
+            "scoped to this initiative. Reason over them — look for patterns, "
+            "silences where you'd expect activity, and mismatches between "
+            "what the PM's previous narrative claimed and what the signals "
+            "actually show."
+        )
+
+        if eng_activity:
+            signals_txt += "\n\nEngineering activity (most recent first):"
+            for _e in eng_activity[:15]:  # cap to avoid runaway prompts
+                _when_str = _fmt_signal_time(_e.get("occurred_at", ""))
+                _ref = f"[{_e.get('reference', '?')}] " if _e.get("reference") else ""
+                _actor = f" ({_e.get('actor')})" if _e.get("actor") else ""
+                signals_txt += f"\n  - {_when_str}: {_ref}{_e.get('description', '')}{_actor}"
+
+        if team_msgs:
+            signals_txt += "\n\nTeam messages (most recent first):"
+            for _m in team_msgs[:15]:
+                _when_str = _fmt_signal_time(_m.get("posted_at", ""))
+                _channel = _m.get("channel", "?")
+                _author = _m.get("author", "?")
+                _sent = f" [sentiment: {_m.get('sentiment')}]" if _m.get("sentiment") else ""
+                signals_txt += f"\n  - {_when_str}: {_channel} · {_author}{_sent}: \"{_m.get('body', '')}\""
+
+        if cal_events:
+            signals_txt += "\n\nCoordination events (most recent first):"
+            for _c in cal_events[:10]:
+                _when_str = _fmt_signal_time(_c.get("occurred_at", ""))
+                _outcome = f" → {_c.get('outcome')}" if _c.get("outcome") else ""
+                signals_txt += f"\n  - {_when_str}: {_c.get('title', '?')}{_outcome}"
+
+    prompt = f"""You are drafting a status check-in for an initiative on behalf of the PM. Your job is to produce a first-draft exec narrative and next-milestone description that the PM will review and edit. This is a working draft, not the final artifact — the PM has situational context you don't.
 
 INITIATIVE CONTEXT
 Title: {context.get('title', '?')}
@@ -773,20 +842,26 @@ PREVIOUS EXEC NARRATIVE (last saved):
 
 PREVIOUS NEXT-MILESTONE TEXT (last saved):
 {context.get('previous_milestone_text') or '(none)'}
+{signals_txt}
 
 TASK
 Draft the two text fields:
 
-1. exec_narrative — a 3-5 sentence narrative for a VP reader. Update the previous narrative to reflect current state. If milestone_status or exec_rag suggest concern, name the specific concern. If progress has advanced, name what actually moved. If a specific customer, team, or blocker is likely relevant, name it (drawing from the previous narrative). Do NOT invent facts you don't have evidence for. If you can't say why something changed, don't claim a reason.
+1. exec_narrative — a 3-5 sentence narrative for a VP reader.
+   - Update the previous narrative to reflect current state.
+   - **Prioritize the ambient signals** over the previous narrative when they conflict. If the previous narrative said "on track" but the signals show a real problem (a blocker, an incident, silence where you'd expect activity, a rescheduled decision meeting), name the problem. Don't perpetuate soft-speak.
+   - When you cite something specific, cite from the signals. Refer to ticket numbers, meeting names, message quotes — the specificity is why this draft is useful.
+   - Don't invent facts. If you can't tell why something changed, don't claim a reason.
 
-2. next_milestone_text — one sentence describing the concrete next thing that would move this initiative forward. Should be specific and actionable, not vague like "continue progress."
+2. next_milestone_text — one sentence describing the concrete next thing that would move this initiative forward. Should be specific and actionable, not vague like "continue progress." When signals suggest a specific blocker or dependency, name the unblock as the next milestone.
 
 WRITING PRINCIPLES
 - Match the voice of a competent PM — direct, specific, honest about risk.
-- If the status suggests trouble but the previous narrative was rosy, acknowledge the gap. Don't perpetuate soft-speak.
-- If you don't have context for a claim, say what you know rather than making it up.
+- Cite specific evidence when you have it. "PR merges paused for 7 days; architectural review rescheduled twice" beats "some minor issues."
+- If milestone_status or exec_rag suggest concern, name the specific concern from the signals.
+- If ambient signals are absent, note that — don't fabricate context.
 - Do NOT open with "This update covers..." or other meta-language.
-- Keep exec_narrative under 120 words. Keep next_milestone_text under 25 words.
+- Keep exec_narrative under 130 words. Keep next_milestone_text under 25 words.
 
 Return ONLY a JSON object. No prose, no markdown, no code fences.
 
@@ -801,7 +876,7 @@ Draft now."""
     try:
         response = client.messages.create(
             model=MODEL_SONNET,
-            max_tokens=800,
+            max_tokens=1000,
             messages=[{"role": "user", "content": prompt}],
         )
         raw_text = ""
