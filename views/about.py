@@ -32,30 +32,35 @@ st.title("👋 About this project")
 
 st.markdown(
     f"""
-    I've spent a lot of my career watching planning processes and tools
-    flatten distinctions that matter. A team reports "we're 80% done
-    shipping" — but the scope quietly changed halfway through, so today's
-    80% isn't yesterday's 80%. A dashboard reports "on track against our
-    release" — but nobody notices we're nowhere close to the outcomes the
-    release was supposed to drive. Exec dashboards show green while the
-    team on the ground knows something is wrong — or the opposite: they
-    highlight everything, so what actually matters gets buried in the
-    noise. A PM writes "on track, some risks" and a leader has to ask
-    three follow-ups to find out which risks and what the mitigation
-    actually looks like.
+    Earlier in my career I ran the kind of program office work you'd
+    expect — I spent real time consolidating status reports across
+    projects into consistent templates, so a VP wasn't reading ten
+    different formats a week. That work matters. But once it was done,
+    it exposed a deeper problem: consistent format doesn't mean relevant
+    content. What actually needed a VP's attention on any given Monday
+    kept shifting — new customer pressure, a hiring decision, something
+    from a board conversation — and my read on what would rise to the
+    top could be off, because their view of the week ahead was often
+    ahead of mine.
 
-    This app is my take on what an OKR system that respected the
-    distinctions between delivery, impact, and intent might look like —
-    built around three specific problems I've watched break down in
-    practice.
+    The other pattern I saw: writing for executives is a specific skill
+    many PMs haven't developed. When something needed a nuanced update,
+    some PMs could produce it well and some couldn't — not because they
+    didn't have the information, but because the exec-writing muscle is
+    different from the ops-writing one.
 
-    This has been a fun exercise for me — exploring current AI capabilities
-    while designing something that fits a real need many companies have and
-    few tools meet directly. The concept, design, architectural calls and
-    modeling decisions are mine; Claude Code did a lot of the heavy lifting
-    on the implementation. Send me your feedback via [LinkedIn]({LINKEDIN_URL})
-    — I'm always looking to improve, and eager to learn about your use cases
-    and how something like this might address them.
+    This app is my take on what an OKR system that took those two
+    problems seriously might look like. It lets strategy flow into
+    objectives and the key results that define them, then tracks how
+    initiatives contribute to those key results, objectives, and
+    strategy. Outputs and outcomes both, measured against the plan.
+    I've used AI along the way — to help define and measure, and to
+    find signals in the data that surface risks earlier than a team
+    would normally catch them on their own. There are a few different
+    axes on which AI shows up in the workflow, and I've tried to be
+    deliberate about which ones move first.
+
+    Feedback is welcome via [LinkedIn]({LINKEDIN_URL}).
     """
 )
 
@@ -82,17 +87,24 @@ st.markdown(
     *judgment about where to look*. Hotspots reads the same underlying
     data an operational team looks at, and produces an AI-generated
     summary at the top: three sentences on what needs attention, what's
-    escalating, what's healthy. The dashboard is still there below — but
-    you don't have to work through it to know where to focus.
+    escalating, what's healthy — including cross-functional patterns
+    where one team's work is moving another team's KR. The dashboard is
+    still there below, but you don't have to work through it to know
+    where to focus.
 
-    **Coach the frontline on writing updates that actually help.**
+    **Help PMs write updates that actually help.**
     Having spent years reading status updates from project and product
     managers, I know the pattern: a busy PM writes a vague "on track" or
     a generic "some blockers," and a leader has to reply with clarifying
-    questions to get the picture. The AI check-in review takes an update
-    and scores it against Clarity, Consistency, Completeness, and Realism
-    — flagging the things a leader would ask, before the leader has to
-    ask. Cheaper than a back-and-forth. More generous than a rejection.
+    questions to get the picture. The app addresses this two ways. If a
+    PM has the context to write the update, the AI review scores it
+    against Clarity, Consistency, Completeness, and Realism — flagging
+    what a leader would ask before the leader has to ask. If the PM
+    would benefit from a starting point, the AI drafts a first version
+    from the initiative's current state, prior narrative, linked KRs,
+    and ambient signals (simulated Jira, Slack, and calendar activity
+    in this demo) — the PM edits from there. Two modes, chosen per
+    update. Both are coaching, not gatekeeping.
     """
 )
 
@@ -270,14 +282,27 @@ st.markdown(
     **Initiatives belong to a team, not just to the KRs they move.** A
     platform team can run an initiative that moves a revenue team's KR.
     That's the right model for cross-functional work, and the schema
-    treats team ownership and KR contribution as independent relationships.
+    treats team ownership and KR contribution as independent
+    relationships. The Hotspots page has a dedicated panel that surfaces
+    these cross-team patterns — where TPM coordination usually lives.
 
-    **AI is layered as a coaching partner, not a decision-maker.** The app
-    uses Claude Sonnet and Haiku for specific, scoped moments — suggesting
-    KR drafts on the planning surface, summarizing Hotspots for exec review,
-    and reviewing PM check-ins against a Clarity / Consistency /
-    Completeness / Realism rubric. The AI accelerates the work; the human
-    still owns every decision that ends up in the plan.
+    **Ambient signals feed the AI, not just what humans typed in.** In
+    the demo, each initiative has a **📡 Recent activity** panel that
+    shows simulated Jira / Slack / calendar signals. The AI drafting
+    feature reads these when producing a check-in — which is what lets
+    the AI catch things the previous exec narrative missed. In
+    production this would be real integrations; the shape of what the
+    AI consumes is what a production version would look like.
+
+    **AI shows up in more than one shape.** The app uses Claude Sonnet
+    and Haiku across a few different moments: proposing KR drafts on the
+    planning surface (Suggest KRs), summarizing Hotspots for exec review,
+    reviewing check-ins against a Clarity / Consistency / Completeness /
+    Realism rubric, and drafting check-ins from ambient signals when the
+    PM wants a starting point. Some of these are the human-writes / AI-
+    reviews pattern; others are the AI-drafts / human-reviews pattern.
+    Both patterns are valid; the app makes the choice per-update
+    explicit rather than picking one.
     """
 )
 
@@ -290,29 +315,36 @@ st.subheader("What to look at first")
 
 st.markdown(
     """
-    Two pages carry most of the design intent:
+    A short tour, if you have five minutes:
 
-    - **🔥 Hotspots** shows how the modeling produces a triage view — each
-      team's health rolled up as a card, expandable to show the specific
-      problems that need attention. At the top, an **✨ AI-generated summary**
-      reads the same data and produces a three-sentence exec brief. Note
-      the exec-vs-team divergence surfaced inline where they disagree.
+    - **🔥 Hotspots** — the exec view. An AI-generated summary sits at
+      the top; below it, a **Cross-functional patterns** panel shows
+      where one team's work is moving another team's KR. Then per-team
+      roll-up cards, expandable to specific problems. Look for the
+      exec-vs-team divergence flagged inline.
 
-    - **🧭 Objectives & KRs** shows the causal cascade, KR by KR — each
-      Key Result renders with its supporting initiatives as a small table
-      underneath. Note the ownership vs. contribution distinction when an
-      initiative from one team moves another team's KR.
+    - **📊 Initiative Check-ins** → **Query engine caching layer** —
+      the AI-native piece. Expand the initiative, open the
+      **📡 Recent activity** expander to see the simulated Jira /
+      Slack / calendar signals, then click **✨ Draft with AI**. The
+      AI reads the ambient signals, prior narrative, and current state,
+      and produces a first draft that names specific tickets,
+      incidents, and rescheduled meetings — surfacing what the previous
+      narrative was smoothing over. This is where the workflow inverts:
+      the PM edits an AI-drafted update rather than writing from a
+      blank field.
 
-    Plan Flow, Plan Narrative, and the Initiatives page give three different
-    reads on the same data: a Sankey, a document, and a portfolio view.
+    - **🧭 Objectives & KRs** — the causal cascade. Strategy → Yearly
+      Objectives → Quarterly Objectives → KRs → Initiatives with their
+      contribution to each KR. Note the ownership vs contribution
+      distinction when an initiative from one team moves another
+      team's KR.
 
-    On **✏️ Plan a Quarter**, each objective has an **✨ Suggest KRs**
-    button that asks Claude to propose two or three draft KRs given the
-    objective's context. On **📊 Initiative Check-ins** and **📈 Key
-    Result Check-ins**, each update has an **✨ Ask AI to review this
-    update** section — Claude scores the check-in against Clarity,
-    Consistency, Completeness, and Realism and returns a verdict
-    (Ready to send · Needs sharpening · Rework recommended).
+    Planning Flow, Executive Narrative, and Initiatives give three
+    additional reads on the same data: a Sankey, a document, and a
+    portfolio view. On **✏️ Plan a Quarter**, each objective has an
+    **✨ Suggest KRs** button that asks Claude to propose two or three
+    draft KRs given the objective's context.
     """
 )
 
