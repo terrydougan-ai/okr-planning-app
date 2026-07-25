@@ -844,23 +844,35 @@ PREVIOUS NEXT-MILESTONE TEXT (last saved):
 {context.get('previous_milestone_text') or '(none)'}
 {signals_txt}
 
+CRITICAL DIRECTIVE — READ CAREFULLY
+The previous exec narrative is HISTORICAL CONTEXT ONLY. It represents what someone wrote at a past point in time. It may be accurate or it may have been aspirational, incomplete, or wrong. Do NOT treat it as a source of truth or a template to preserve continuity with.
+
+The signals below (engineering activity, team messages, coordination events) are what has actually happened since. They are the ground truth for this check-in. Your job is NOT to update the tone of the previous narrative — your job is to write a fresh narrative grounded in what the signals show.
+
+Before writing the draft, silently perform this analysis:
+1. What are the 3-4 most important events in the signals? (Look for: unresolved blockers, incidents, rescheduled meetings, PR merges stopping, escalations in team channels, sentiment tags like "escalation" or "concerned".)
+2. Does the previous exec narrative acknowledge these events? If not, that gap IS the story — the draft should surface what the previous narrative missed.
+3. Does the previous narrative say something the signals contradict? (E.g., "on track" while signals show a blocker, or "team is managing appropriately" while team messages show escalation.) Name the contradiction directly.
+
+Then write the draft.
+
 TASK
 Draft the two text fields:
 
 1. exec_narrative — a 3-5 sentence narrative for a VP reader.
-   - Update the previous narrative to reflect current state.
-   - **Prioritize the ambient signals** over the previous narrative when they conflict. If the previous narrative said "on track" but the signals show a real problem (a blocker, an incident, silence where you'd expect activity, a rescheduled decision meeting), name the problem. Don't perpetuate soft-speak.
-   - When you cite something specific, cite from the signals. Refer to ticket numbers, meeting names, message quotes — the specificity is why this draft is useful.
-   - Don't invent facts. If you can't tell why something changed, don't claim a reason.
+   - Lead with what the signals show, not with a status summary. If there's an unresolved blocker, incident, or rescheduled decision, that's the lead.
+   - Cite specific signal evidence: ticket numbers (BUG-XXXX, INC-XXXX), specific incidents, specific meetings ("architectural review rescheduled twice"), specific sentiment from team messages.
+   - If the signals contradict the previous narrative or the exec_rag setting, NAME THE CONTRADICTION. Do not smooth over it. Do not use soft language like "some minor issues" — say what the actual issue is.
+   - If the previous narrative claimed something the signals don't support, do NOT repeat that claim.
+   - If signals show a customer, engineer, or partner by name and it's relevant, use their name.
 
-2. next_milestone_text — one sentence describing the concrete next thing that would move this initiative forward. Should be specific and actionable, not vague like "continue progress." When signals suggest a specific blocker or dependency, name the unblock as the next milestone.
+2. next_milestone_text — one sentence describing the concrete next thing that would move this initiative forward. When signals suggest a specific blocker or dependency, name the unblock as the next milestone. Do not use vague language like "continue progress" or "complete rollout."
 
 WRITING PRINCIPLES
-- Match the voice of a competent PM — direct, specific, honest about risk.
-- Cite specific evidence when you have it. "PR merges paused for 7 days; architectural review rescheduled twice" beats "some minor issues."
-- If milestone_status or exec_rag suggest concern, name the specific concern from the signals.
+- The best drafts read like a competent PM writing honestly under time pressure — direct, specific, honest about risk.
 - If ambient signals are absent, note that — don't fabricate context.
 - Do NOT open with "This update covers..." or other meta-language.
+- Do NOT include content just because it was in the previous narrative. Only include it if signals support it.
 - Keep exec_narrative under 130 words. Keep next_milestone_text under 25 words.
 
 Return ONLY a JSON object. No prose, no markdown, no code fences.
