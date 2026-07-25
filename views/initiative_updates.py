@@ -425,16 +425,17 @@ for _, init in visible_sorted.iterrows():
         if _total_signals > 0:
             with st.expander(f"📡 Recent activity  ·  {_total_signals} signals", expanded=False):
                 st.caption(
-                    "Ambient signals scoped to this initiative — engineering "
-                    "activity, team messages, coordination events. The AI "
-                    "draft feature reads these when producing check-ins. "
+                    "All seeded signals scoped to this initiative — engineering "
+                    "activity, team messages, coordination events. The AI draft "
+                    "feature reads these when producing check-ins. "
                     "_(Simulated for demo — production would integrate Jira, "
-                    "Slack, calendar.)_"
+                    "Slack, calendar and filter to recent + material events. "
+                    "For clarity here, all signals are shown.)_"
                 )
 
                 # Engineering activity
                 if not _init_eng.empty:
-                    st.markdown("**🛠 Engineering activity**")
+                    st.markdown("**🛠 Engineering activity (Jira)**")
                     for _, _e in _init_eng.sort_values("occurred_at", ascending=False).iterrows():
                         _when = pd.to_datetime(_e["occurred_at"])
                         _days_ago = max(0, (pd.Timestamp.now(tz=_when.tz) - _when).days)
@@ -450,7 +451,7 @@ for _, init in visible_sorted.iterrows():
 
                 # Team messages
                 if not _init_msgs.empty:
-                    st.markdown("**💬 Team messages**")
+                    st.markdown("**💬 Team messages (Slack)**")
                     _sentiment_dot = {
                         "positive": "🟢", "neutral": "⚪", "concerned": "🟡", "escalation": "🔴",
                     }
@@ -470,7 +471,7 @@ for _, init in visible_sorted.iterrows():
 
                 # Calendar events
                 if not _init_events.empty:
-                    st.markdown("**📅 Coordination events**")
+                    st.markdown("**📅 Coordination events (Calendar)**")
                     for _, _c in _init_events.sort_values("occurred_at", ascending=False).iterrows():
                         _when = pd.to_datetime(_c["occurred_at"])
                         _days_ago = max(0, (pd.Timestamp.now(tz=_when.tz) - _when).days)
@@ -483,100 +484,124 @@ for _, init in visible_sorted.iterrows():
                             unsafe_allow_html=True,
                         )
 
-        # ---- AI-native drafting: 'Draft with AI' button OUTSIDE the form ----
-        # This inverts the default authorship. Instead of the PM writing the
-        # exec narrative and next-milestone text and the AI reviewing, the
-        # AI drafts from context and the PM edits or confirms. The workflow
-        # shape changes — human as editor, not author.
+        # ---- AI-native drafting: 'Draft with AI' + Update form, visually joined ----
+        # Wrap the button and the form in the same bordered container so they
+        # read as one unit — even though Streamlit forbids buttons inside
+        # forms (they'd act as submit). The container is the visual glue.
+        #
+        # Why the two-pattern explanation matters: this is the moment where
+        # the AI-native transition is visible in the workflow. Instead of
+        # hiding the choice, we surface both patterns and let the PM pick.
         _draft_key = f"ai_draft_{init_id}"
         _pending_draft = st.session_state.get(_draft_key)
 
-        if is_ai_enabled():
-            _draft_col_a, _draft_col_b = st.columns([1, 3])
-            with _draft_col_a:
-                if st.button(
-                    "✨ Draft with AI",
-                    key=f"draft_btn_{init_id}",
-                    use_container_width=True,
-                    help=(
-                        "Ask Claude Sonnet to draft the exec narrative and "
-                        "next-milestone text from the initiative's current "
-                        "state and last check-in. The fields populate below "
-                        "for you to review and edit before saving."
-                    ),
-                ):
-                    # Build context package for the drafter
-                    _linked_krs_for_ai = []
-                    for _, _lk in init_links.iterrows():
-                        _kr_row = key_results[key_results["id"] == _lk["key_result_id"]]
-                        if not _kr_row.empty:
-                            _kr = _kr_row.iloc[0]
-                            _linked_krs_for_ai.append({
-                                "title": _kr.get("title", "?"),
-                                "unit": _kr.get("metric_unit", ""),
-                                "current": _kr.get("current_value"),
-                                "target": _kr.get("target_value"),
-                            })
-                    _context = {
-                        "title": init.get("title"),
-                        "description": init.get("description"),
-                        "effort_estimate": init.get("effort_estimate"),
-                        "status": init.get("status"),
-                        "milestone_status": init.get("milestone_status"),
-                        "exec_rag": init.get("exec_rag"),
-                        "progress_pct": init.get("progress_pct") or 0,
-                        "previous_narrative": init.get("exec_narrative"),
-                        "previous_milestone_text": init.get("next_milestone_text"),
-                        "next_milestone_date": str(init.get("next_milestone_date") or ""),
-                        "linked_krs": _linked_krs_for_ai,
-                        "days_since_last_update": None,  # Signal we don't have yet
-                        # --- Ambient signals ---
-                        # This is what makes the draft *signal-native* rather
-                        # than assisted. The AI reads engineering activity,
-                        # team messages, and coordination events — not just
-                        # PM-typed fields.
-                        "engineering_activity": _init_eng.sort_values("occurred_at", ascending=False).to_dict("records") if not _init_eng.empty else [],
-                        "team_messages": _init_msgs.sort_values("posted_at", ascending=False).to_dict("records") if not _init_msgs.empty else [],
-                        "calendar_events": _init_events.sort_values("occurred_at", ascending=False).to_dict("records") if not _init_events.empty else [],
-                    }
-                    with st.spinner("Drafting..."):
-                        _draft = draft_initiative_checkin(_context)
-                    if _draft:
-                        st.session_state[_draft_key] = _draft
-                        st.rerun()
-                    else:
-                        st.warning(
-                            "Couldn't generate a draft right now. Try again "
-                            "in a moment, or fill in the fields manually below."
+        with st.container(border=True):
+            if is_ai_enabled():
+                st.markdown(
+                    "<div style='font-weight:600;font-size:0.95em;"
+                    "color:#374151;margin-bottom:4px'>"
+                    "💡 Two ways to write this update</div>",
+                    unsafe_allow_html=True,
+                )
+                st.caption(
+                    "**You draft, AI reviews** — fill in the fields below, then "
+                    "click *Ask AI to Review* under the save button.  "
+                    "**AI drafts, you review** — click *Draft with AI* below to "
+                    "have Claude draft the exec narrative and next-milestone "
+                    "text from context (signals, prior narrative, KRs), then "
+                    "edit before saving."
+                )
+
+                _draft_col_a, _draft_col_b = st.columns([1, 3])
+                with _draft_col_a:
+                    if st.button(
+                        "✨ Draft with AI",
+                        key=f"draft_btn_{init_id}",
+                        use_container_width=True,
+                        help=(
+                            "Ask Claude Sonnet to draft the exec narrative and "
+                            "next-milestone text from the initiative's current "
+                            "state and last check-in. The fields populate below "
+                            "for you to review and edit before saving."
+                        ),
+                    ):
+                        # Build context package for the drafter
+                        _linked_krs_for_ai = []
+                        for _, _lk in init_links.iterrows():
+                            _kr_row = key_results[key_results["id"] == _lk["key_result_id"]]
+                            if not _kr_row.empty:
+                                _kr = _kr_row.iloc[0]
+                                _linked_krs_for_ai.append({
+                                    "title": _kr.get("title", "?"),
+                                    "unit": _kr.get("metric_unit", ""),
+                                    "current": _kr.get("current_value"),
+                                    "target": _kr.get("target_value"),
+                                })
+                        _context = {
+                            "title": init.get("title"),
+                            "description": init.get("description"),
+                            "effort_estimate": init.get("effort_estimate"),
+                            "status": init.get("status"),
+                            "milestone_status": init.get("milestone_status"),
+                            "exec_rag": init.get("exec_rag"),
+                            "progress_pct": init.get("progress_pct") or 0,
+                            "previous_narrative": init.get("exec_narrative"),
+                            "previous_milestone_text": init.get("next_milestone_text"),
+                            "next_milestone_date": str(init.get("next_milestone_date") or ""),
+                            "linked_krs": _linked_krs_for_ai,
+                            "days_since_last_update": None,  # Signal we don't have yet
+                            # --- Ambient signals ---
+                            # This is what makes the draft *signal-native* rather
+                            # than assisted. The AI reads engineering activity,
+                            # team messages, and coordination events — not just
+                            # PM-typed fields.
+                            "engineering_activity": _init_eng.sort_values("occurred_at", ascending=False).to_dict("records") if not _init_eng.empty else [],
+                            "team_messages": _init_msgs.sort_values("posted_at", ascending=False).to_dict("records") if not _init_msgs.empty else [],
+                            "calendar_events": _init_events.sort_values("occurred_at", ascending=False).to_dict("records") if not _init_events.empty else [],
+                        }
+                        with st.spinner("Drafting..."):
+                            _draft = draft_initiative_checkin(_context)
+                        if _draft:
+                            st.session_state[_draft_key] = _draft
+                            st.rerun()
+                        else:
+                            st.warning(
+                                "Couldn't generate a draft right now. Try again "
+                                "in a moment, or fill in the fields manually below."
+                            )
+                with _draft_col_b:
+                    if _pending_draft:
+                        st.info(
+                            "✨ **AI drafted the exec narrative and next-milestone "
+                            "text below.** Review, edit, and save — you own what "
+                            "goes into the record."
                         )
-            with _draft_col_b:
-                if _pending_draft:
-                    st.info(
-                        "✨ **AI drafted the exec narrative and next-milestone "
-                        "text below.** Review, edit, and save — you own what "
-                        "goes into the record."
-                    )
 
-        # ---- Update form: the things this page exists to update ----
-        with st.form(f"update_init_{init_id}"):
-            # Delivery %
-            ui_progress = st.slider(
-                "Delivery %",
-                min_value=0, max_value=100,
-                value=int(init.get("progress_pct") or 0),
-                step=5,
-                help="How much of the work is done?",
-            )
+                st.markdown(
+                    "<hr style='margin:12px 0 6px;border:none;border-top:1px solid #E5E7EB'>",
+                    unsafe_allow_html=True,
+                )
 
-            # Milestone Delivery Status (RAG of execution health)
-            cur_ms = init.get("milestone_status")
-            cur_ms_idx = DELIVERY_STATES.index(cur_ms) if isinstance(cur_ms, str) and cur_ms in DELIVERY_STATES else 0
-            ui_ms = st.selectbox(
-                "Milestone Delivery Status",
-                options=DELIVERY_STATES,
-                index=cur_ms_idx,
-                format_func=lambda s: DELIVERY_LABELS.get(s, s),
-                help=(
+            # ---- Update form: the things this page exists to update ----
+            with st.form(f"update_init_{init_id}"):
+                # Delivery %
+                ui_progress = st.slider(
+                    "Delivery %",
+                    min_value=0, max_value=100,
+                    value=int(init.get("progress_pct") or 0),
+                    step=5,
+                    help="How much of the work is done?",
+                )
+
+                # Milestone Delivery Status (RAG of execution health)
+                cur_ms = init.get("milestone_status")
+                cur_ms_idx = DELIVERY_STATES.index(cur_ms) if isinstance(cur_ms, str) and cur_ms in DELIVERY_STATES else 0
+                ui_ms = st.selectbox(
+                    "Milestone Delivery Status",
+                    options=DELIVERY_STATES,
+                    index=cur_ms_idx,
+                    format_func=lambda s: DELIVERY_LABELS.get(s, s),
+                    help=(
                     "Internal team view of how execution is going. Can differ "
                     "from Exec RAG below — Exec RAG is the curated outward signal."
                 ),
