@@ -26,6 +26,18 @@ import pandas as pd
 from datetime import date
 from supabase import create_client, Client
 
+# AI helpers — silently no-op when ANTHROPIC_API_KEY isn't configured
+from views._ai_helpers import (
+    is_ai_enabled,
+    review_initiative_update,
+    render_review,
+    compute_initiative_signature,
+    draft_initiative_checkin,
+)
+
+# Analytics — silently no-op when POSTHOG_API_KEY isn't configured
+from views._analytics import track_page
+
 
 # Display vocabulary — the four RAG-ish states for delivery health.
 # Stored in DB as the keys below; rendered as the friendlier labels.
@@ -63,7 +75,23 @@ def load_all():
         "key_results": pd.DataFrame(sb.table("key_result").select("*").execute().data),
         "objectives": pd.DataFrame(sb.table("objective").select("*").execute().data),
         "org_units": pd.DataFrame(sb.table("org_unit").select("*").execute().data),
+        # Ambient signals — simulated Jira/Slack/calendar for demonstrating
+        # signal-native AI patterns. Loaded even if empty; individual
+        # initiatives may have no signal data.
+        "engineering_activity": _try_load_signals("engineering_activity"),
+        "team_message": _try_load_signals("team_message"),
+        "calendar_event": _try_load_signals("calendar_event"),
     }
+
+
+def _try_load_signals(table_name: str) -> pd.DataFrame:
+    """Load signals if the table exists; return empty DataFrame if not.
+    Kept graceful so the app still runs on databases without the signals
+    migration applied yet."""
+    try:
+        return pd.DataFrame(sb.table(table_name).select("*").execute().data)
+    except Exception:
+        return pd.DataFrame()
 
 
 def clear_cache():
@@ -105,7 +133,8 @@ def parse_date(v):
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
-st.title("📊 Initiative Updates")
+track_page("Initiative Check-ins")
+st.title("📊 Initiative Check-ins")
 st.caption(
     "Weekly/monthly execution reporting. Update delivery %, milestone "
     "status, exec narrative, and actual KR impact. Structural changes "
@@ -225,13 +254,16 @@ with fc3:
         format_func=lambda s: status_badge(s) if s != "all" else "All statuses",
     )
 
-# Persist org scope (specific org selections only)
+# Persist org scope (selecting "All" clears it so other pages default broad too)
 if selected_org_label != ALL_ORGS_LABEL:
     _scope_id = tree_label_to_id.get(selected_org_label)
     if _scope_id:
         st.session_state["scope_org_id"] = _scope_id
         # Find raw org name (strip the ↳ prefix) for the sidebar indicator
         st.session_state["scope_org_name"] = ou_name_by_id.get(_scope_id, selected_org_label)
+else:
+    st.session_state.pop("scope_org_id", None)
+    st.session_state.pop("scope_org_name", None)
 
 
 # Apply filters
@@ -242,15 +274,51 @@ if status_filter != "all":
 if selected_org_label != ALL_ORGS_LABEL:
     filter_org_id = tree_label_to_id.get(selected_org_label)
     if filter_org_id is not None:
-        objs_in_org = objectives[objectives["org_unit_id"] == filter_org_id] if not objectives.empty else pd.DataFrame()
-        obj_ids_in_org = set(objs_in_org["id"]) if not objs_in_org.empty else set()
-        krs_in_org = key_results[key_results["objective_id"].isin(obj_ids_in_org)] if obj_ids_in_org and not key_results.empty else pd.DataFrame()
-        kr_ids_in_org = set(krs_in_org["id"]) if not krs_in_org.empty else set()
-        init_ids_in_org = (
-            set(links[links["key_result_id"].isin(kr_ids_in_org)]["initiative_id"].tolist())
-            if kr_ids_in_org and not links.empty else set()
+        # Build the family (self + descendants). Picking "Acme Analytics"
+        # should include Product, Go-to-Market, Platform — mirrors Hotspots.
+        _children_by_parent: dict = {}
+        for _, _row in org_units.iterrows():
+            _pid = _row["parent_unit_id"]
+            if _pid != _pid:  # NaN check
+                _pid = None
+            _children_by_parent.setdefault(_pid, []).append(_row["id"])
+
+        family_ids = {filter_org_id}
+        _stack = list(_children_by_parent.get(filter_org_id, []))
+        while _stack:
+            _cid = _stack.pop()
+            if _cid in family_ids:
+                continue
+            family_ids.add(_cid)
+            _stack.extend(_children_by_parent.get(_cid, []))
+
+        # Two paths to include an initiative in scope:
+        #   1. It's linked (via KR) to a KR whose objective is under a family org
+        #   2. It's directly owned by a family org (initiative.org_unit_id in family)
+        # An initiative can qualify via either path — mirrors Hotspots.
+        objs_in_family = (
+            objectives[objectives["org_unit_id"].isin(family_ids)]
+            if not objectives.empty else pd.DataFrame()
         )
-        visible = visible[visible["id"].isin(init_ids_in_org)]
+        obj_ids_in_family = set(objs_in_family["id"]) if not objs_in_family.empty else set()
+        krs_in_family = (
+            key_results[key_results["objective_id"].isin(obj_ids_in_family)]
+            if obj_ids_in_family and not key_results.empty else pd.DataFrame()
+        )
+        kr_ids_in_family = set(krs_in_family["id"]) if not krs_in_family.empty else set()
+        linked_init_ids = (
+            set(links[links["key_result_id"].isin(kr_ids_in_family)]["initiative_id"].tolist())
+            if kr_ids_in_family and not links.empty else set()
+        )
+        # Directly-owned initiatives
+        if "org_unit_id" in visible.columns:
+            owned_init_ids = set(
+                visible[visible["org_unit_id"].isin(family_ids)]["id"].tolist()
+            )
+        else:
+            owned_init_ids = set()
+        in_family_init_ids = linked_init_ids | owned_init_ids
+        visible = visible[visible["id"].isin(in_family_init_ids)]
 
 if selected_owner == NO_OWNER_LABEL:
     # NaN-safe "owner is empty" filter
@@ -337,6 +405,158 @@ for _, init in visible_sorted.iterrows():
             with st.expander("Project description", expanded=False):
                 st.write(init["description"])
 
+        # ---- Recent activity: simulated ambient signals ----
+        # Jira-ish, Slack-ish, and calendar signals scoped to this initiative.
+        # These would be integrated feeds in production — for this demo they're
+        # seeded to make the AI drafting demonstrably better. The expander is
+        # deliberately collapsed by default; only PMs curious about "what does
+        # the AI see?" will open it, but the presence is enough to demonstrate
+        # the pattern.
+        _eng_activity = data["engineering_activity"]
+        _team_msgs = data["team_message"]
+        _cal_events = data["calendar_event"]
+
+        _init_eng = _eng_activity[_eng_activity["initiative_id"] == init_id] if not _eng_activity.empty else pd.DataFrame()
+        _init_msgs = _team_msgs[_team_msgs["initiative_id"] == init_id] if not _team_msgs.empty else pd.DataFrame()
+        _init_events = _cal_events[_cal_events["initiative_id"] == init_id] if not _cal_events.empty else pd.DataFrame()
+
+        _total_signals = len(_init_eng) + len(_init_msgs) + len(_init_events)
+
+        if _total_signals > 0:
+            with st.expander(f"📡 Recent activity  ·  {_total_signals} signals", expanded=False):
+                st.caption(
+                    "Ambient signals scoped to this initiative — engineering "
+                    "activity, team messages, coordination events. The AI "
+                    "draft feature reads these when producing check-ins. "
+                    "_(Simulated for demo — production would integrate Jira, "
+                    "Slack, calendar.)_"
+                )
+
+                # Engineering activity
+                if not _init_eng.empty:
+                    st.markdown("**🛠 Engineering activity**")
+                    for _, _e in _init_eng.sort_values("occurred_at", ascending=False).iterrows():
+                        _when = pd.to_datetime(_e["occurred_at"])
+                        _days_ago = max(0, (pd.Timestamp.now(tz=_when.tz) - _when).days)
+                        _ref = f"`{_e['reference']}`  ·  " if _e.get("reference") else ""
+                        _actor = f"  ·  _{_e['actor']}_" if _e.get("actor") else ""
+                        st.markdown(
+                            f"<div style='margin:4px 0 4px 12px;font-size:0.88em'>"
+                            f"{_ref}{_e['description']}"
+                            f"<span style='color:#9CA3AF'>  ·  {_days_ago}d ago{_actor}</span>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+
+                # Team messages
+                if not _init_msgs.empty:
+                    st.markdown("**💬 Team messages**")
+                    _sentiment_dot = {
+                        "positive": "🟢", "neutral": "⚪", "concerned": "🟡", "escalation": "🔴",
+                    }
+                    for _, _m in _init_msgs.sort_values("posted_at", ascending=False).iterrows():
+                        _when = pd.to_datetime(_m["posted_at"])
+                        _days_ago = max(0, (pd.Timestamp.now(tz=_when.tz) - _when).days)
+                        _dot = _sentiment_dot.get(_m.get("sentiment") or "", "")
+                        _author = f"_{_m['author']}_" if _m.get("author") else ""
+                        st.markdown(
+                            f"<div style='margin:4px 0 4px 12px;font-size:0.88em'>"
+                            f"{_dot} <b>{_m['channel']}</b>  ·  {_author}: "
+                            f"&ldquo;{_m['body']}&rdquo;"
+                            f"<span style='color:#9CA3AF'>  ·  {_days_ago}d ago</span>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+
+                # Calendar events
+                if not _init_events.empty:
+                    st.markdown("**📅 Coordination events**")
+                    for _, _c in _init_events.sort_values("occurred_at", ascending=False).iterrows():
+                        _when = pd.to_datetime(_c["occurred_at"])
+                        _days_ago = max(0, (pd.Timestamp.now(tz=_when.tz) - _when).days)
+                        _outcome = f"  →  {_c['outcome']}" if _c.get("outcome") else ""
+                        st.markdown(
+                            f"<div style='margin:4px 0 4px 12px;font-size:0.88em'>"
+                            f"<b>{_c['title']}</b>{_outcome}"
+                            f"<span style='color:#9CA3AF'>  ·  {_days_ago}d ago</span>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+
+        # ---- AI-native drafting: 'Draft with AI' button OUTSIDE the form ----
+        # This inverts the default authorship. Instead of the PM writing the
+        # exec narrative and next-milestone text and the AI reviewing, the
+        # AI drafts from context and the PM edits or confirms. The workflow
+        # shape changes — human as editor, not author.
+        _draft_key = f"ai_draft_{init_id}"
+        _pending_draft = st.session_state.get(_draft_key)
+
+        if is_ai_enabled():
+            _draft_col_a, _draft_col_b = st.columns([1, 3])
+            with _draft_col_a:
+                if st.button(
+                    "✨ Draft with AI",
+                    key=f"draft_btn_{init_id}",
+                    use_container_width=True,
+                    help=(
+                        "Ask Claude Sonnet to draft the exec narrative and "
+                        "next-milestone text from the initiative's current "
+                        "state and last check-in. The fields populate below "
+                        "for you to review and edit before saving."
+                    ),
+                ):
+                    # Build context package for the drafter
+                    _linked_krs_for_ai = []
+                    for _, _lk in init_links.iterrows():
+                        _kr_row = key_results[key_results["id"] == _lk["key_result_id"]]
+                        if not _kr_row.empty:
+                            _kr = _kr_row.iloc[0]
+                            _linked_krs_for_ai.append({
+                                "title": _kr.get("title", "?"),
+                                "unit": _kr.get("metric_unit", ""),
+                                "current": _kr.get("current_value"),
+                                "target": _kr.get("target_value"),
+                            })
+                    _context = {
+                        "title": init.get("title"),
+                        "description": init.get("description"),
+                        "effort_estimate": init.get("effort_estimate"),
+                        "status": init.get("status"),
+                        "milestone_status": init.get("milestone_status"),
+                        "exec_rag": init.get("exec_rag"),
+                        "progress_pct": init.get("progress_pct") or 0,
+                        "previous_narrative": init.get("exec_narrative"),
+                        "previous_milestone_text": init.get("next_milestone_text"),
+                        "next_milestone_date": str(init.get("next_milestone_date") or ""),
+                        "linked_krs": _linked_krs_for_ai,
+                        "days_since_last_update": None,  # Signal we don't have yet
+                        # --- Ambient signals ---
+                        # This is what makes the draft *signal-native* rather
+                        # than assisted. The AI reads engineering activity,
+                        # team messages, and coordination events — not just
+                        # PM-typed fields.
+                        "engineering_activity": _init_eng.sort_values("occurred_at", ascending=False).to_dict("records") if not _init_eng.empty else [],
+                        "team_messages": _init_msgs.sort_values("posted_at", ascending=False).to_dict("records") if not _init_msgs.empty else [],
+                        "calendar_events": _init_events.sort_values("occurred_at", ascending=False).to_dict("records") if not _init_events.empty else [],
+                    }
+                    with st.spinner("Drafting..."):
+                        _draft = draft_initiative_checkin(_context)
+                    if _draft:
+                        st.session_state[_draft_key] = _draft
+                        st.rerun()
+                    else:
+                        st.warning(
+                            "Couldn't generate a draft right now. Try again "
+                            "in a moment, or fill in the fields manually below."
+                        )
+            with _draft_col_b:
+                if _pending_draft:
+                    st.info(
+                        "✨ **AI drafted the exec narrative and next-milestone "
+                        "text below.** Review, edit, and save — you own what "
+                        "goes into the record."
+                    )
+
         # ---- Update form: the things this page exists to update ----
         with st.form(f"update_init_{init_id}"):
             # Delivery %
@@ -365,9 +585,16 @@ for _, init in visible_sorted.iterrows():
             # Next Major Milestone (text + date)
             um1, um2 = st.columns([3, 1])
             with um1:
+                # If an AI draft is pending, use its milestone text; otherwise
+                # use the saved value.
+                _default_ms_text = (
+                    _pending_draft.get("next_milestone_text", "")
+                    if _pending_draft
+                    else safe_str(init.get("next_milestone_text"))
+                )
                 ui_next_ms_text = st.text_input(
                     "Next Major Milestone",
-                    value=safe_str(init.get("next_milestone_text")),
+                    value=_default_ms_text,
                     placeholder="e.g. Onboarding redesign deployed to 100% of new signups",
                 )
             with um2:
@@ -397,9 +624,16 @@ for _, init in visible_sorted.iterrows():
             )
 
             # Exec narrative
+            # If an AI draft is pending, use its narrative; otherwise
+            # use the saved value from the DB.
+            _default_narrative = (
+                _pending_draft.get("exec_narrative", "")
+                if _pending_draft
+                else safe_str(init.get("exec_narrative"))
+            )
             ui_exec_narrative = st.text_area(
                 "Exec narrative",
-                value=safe_str(init.get("exec_narrative")),
+                value=_default_narrative,
                 height=80,
                 placeholder=(
                     "What should execs know about this initiative right "
@@ -419,14 +653,138 @@ for _, init in visible_sorted.iterrows():
                 }
                 try:
                     sb.table("initiative").update(payload).eq("id", init_id).execute()
+                    # Clear any pending AI draft — the PM has committed their
+                    # (possibly-edited) version to the record. Next visit
+                    # reads from the DB.
+                    st.session_state.pop(_draft_key, None)
                     clear_cache()
                     st.success("Updates saved.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Save failed: {e}")
 
-        # Delivery progress bar (visualization of what's stored)
-        st.progress((init.get("progress_pct") or 0) / 100)
+        # --- AI review of this initiative check-in --------------------------
+        # Sits OUTSIDE the form (buttons inside a form act as submit buttons).
+        # Reads the last-saved values from the DB, so PMs get feedback on what
+        # they've just saved — treats "save then review" as the natural flow.
+        #
+        # The latest review is persisted to the initiative row (see Phase 9).
+        # If the update has changed since the review was generated, a
+        # "stale" warning appears prompting a regenerate.
+        if is_ai_enabled():
+            _review_key = f"init_review_{init_id}"
+
+            # Compute the CURRENT signature of the saved update
+            _current_signature = compute_initiative_signature({
+                "status": init.get("status"),
+                "milestone_status": init.get("milestone_status"),
+                "exec_rag": init.get("exec_rag"),
+                "progress_pct": init.get("progress_pct"),
+                "next_milestone_text": init.get("next_milestone_text"),
+                "next_milestone_date": init.get("next_milestone_date"),
+                "exec_narrative": init.get("exec_narrative"),
+            })
+
+            # Load saved review from the DB row (populated on generation)
+            _saved_review = init.get("latest_ai_review")
+            _saved_at = init.get("latest_ai_review_at")
+            _saved_sig = init.get("latest_ai_review_signature")
+
+            # Pandas may return NaN for missing JSONB — normalize to None
+            if isinstance(_saved_review, float) and pd.isna(_saved_review):
+                _saved_review = None
+            if _saved_review and isinstance(_saved_review, str):
+                # Some clients return JSONB as a JSON string
+                try:
+                    import json as _json
+                    _saved_review = _json.loads(_saved_review)
+                except Exception:
+                    _saved_review = None
+
+            _is_stale = (
+                _saved_review is not None
+                and _saved_sig is not None
+                and _saved_sig != _current_signature
+            )
+
+            with st.expander("✨ Ask AI to review this update", expanded=False):
+                st.caption(
+                    "Claude Sonnet will read the whole update — status, "
+                    "milestone, narrative, delivery % — and give you feedback "
+                    "on Clarity, Consistency, Completeness, and Realism. "
+                    "The AI reads what's saved, so save your edits first."
+                )
+                _rc1, _rc2 = st.columns([1, 3])
+                with _rc1:
+                    _btn_label = "🔄 Regenerate" if _saved_review else "✨ Review"
+                    if st.button(
+                        _btn_label,
+                        key=f"review_btn_{init_id}",
+                        use_container_width=True,
+                    ):
+                        # Build the update package for the AI
+                        _linked_krs_for_ai = []
+                        for _, _lk in init_links.iterrows():
+                            _kr_row = key_results[key_results["id"] == _lk["key_result_id"]]
+                            if not _kr_row.empty:
+                                _kr = _kr_row.iloc[0]
+                                _linked_krs_for_ai.append({
+                                    "title": _kr.get("title", "?"),
+                                    "unit": _kr.get("metric_unit", ""),
+                                    "current": _kr.get("current_value"),
+                                    "target": _kr.get("target_value"),
+                                })
+                        _update_pkg = {
+                            "title": init.get("title"),
+                            "description": init.get("description"),
+                            "status": init.get("status"),
+                            "milestone_status": init.get("milestone_status"),
+                            "exec_rag": init.get("exec_rag"),
+                            "progress_pct": init.get("progress_pct") or 0,
+                            "next_milestone_text": init.get("next_milestone_text"),
+                            "next_milestone_date": str(init.get("next_milestone_date") or ""),
+                            "exec_narrative": init.get("exec_narrative"),
+                            "linked_krs": _linked_krs_for_ai,
+                            "effort_estimate": init.get("effort_estimate"),
+                        }
+                        with st.spinner("Reviewing..."):
+                            _review = review_initiative_update(_update_pkg)
+                        if _review:
+                            # Persist to the initiative row
+                            try:
+                                sb.table("initiative").update({
+                                    "latest_ai_review": _review,
+                                    "latest_ai_review_at": "now()",
+                                    "latest_ai_review_signature": _current_signature,
+                                }).eq("id", init_id).execute()
+                                clear_cache()
+                            except Exception as e:
+                                # Save failed — still show the review in-session
+                                # so the PM isn't blocked. Log for debugging.
+                                print(f"[AI] Save review failed: {e}")
+                            st.rerun()
+                        else:
+                            st.warning(
+                                "Couldn't generate a review right now. Try again in a moment."
+                            )
+
+                # Show the saved review, if any. Add a "stale" warning if the
+                # update has changed since the review was written.
+                if _saved_review:
+                    st.markdown("---")
+                    if _is_stale:
+                        st.warning(
+                            "⚠ **Review is stale** — the update has changed "
+                            "since this review was generated. Regenerate for "
+                            "current feedback."
+                        )
+                    if _saved_at:
+                        try:
+                            _at_str = pd.to_datetime(_saved_at).strftime("%b %d, %Y · %I:%M %p")
+                            st.caption(f"_Latest review: {_at_str}_")
+                        except Exception:
+                            pass
+                    render_review(_saved_review)
 
         # ---- Actual KR impact per link ----
         st.markdown("---")

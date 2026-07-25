@@ -1,5 +1,5 @@
 """
-OKR Planning App — entry point and navigation router.
+AI OKR Execution System — entry point and navigation router.
 
 This file does ONE thing: it defines the sidebar navigation structure and hands
 off to whichever page is selected. The actual page content lives in `views/`.
@@ -19,7 +19,7 @@ import streamlit as st
 
 # Global page config — applies to every page in the app.
 st.set_page_config(
-    page_title="OKR Planning",
+    page_title="AI OKR Execution System",
     page_icon="🎯",
     layout="wide",
 )
@@ -28,43 +28,52 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 # Define pages
 # ---------------------------------------------------------------------------
+# About / context page — the landing page for demo visitors
+about_page = st.Page(
+    "views/about.py",
+    title="About this project",
+    icon="👋",
+    default=True,  # what a first-time visitor sees on landing
+)
+
 # Plan (workflow) pages
 annual_strategy = st.Page(
     "views/annual_strategy.py",
-    title="Annual Strategy & Objectives",
+    title="Annual Strategy",
     icon="📜",
 )
 plan_quarter = st.Page(
     "views/plan_quarter.py",
     title="Plan a Quarter",
     icon="✏️",
-    default=True,  # the primary working surface
 )
+flow = st.Page(
+    "views/flow.py",
+    title="Planning Flow",
+    icon="🌊",
+)
+
+# Check-in pages (formerly Track)
 checkins = st.Page(
     "views/key_result_updates.py",
-    title="Key Result Updates",
+    title="Key Result Check-ins",
     icon="📈",
 )
 initiative_updates = st.Page(
     "views/initiative_updates.py",
-    title="Initiative Updates",
+    title="Initiative Check-ins",
     icon="📊",
 )
 
-# View (read-only) pages
+# Executive Review (read-only) pages
 hotspots = st.Page(
     "views/hotspots.py",
     title="Hotspots",
     icon="🔥",
 )
-initiatives = st.Page(
-    "views/initiatives.py",
-    title="Initiatives",
-    icon="🚀",
-)
 summary = st.Page(
     "views/plan_narrative.py",
-    title="Plan Narrative",
+    title="Executive Narrative",
     icon="📄",
 )
 objectives = st.Page(
@@ -72,16 +81,16 @@ objectives = st.Page(
     title="Objectives & KRs",
     icon="🧭",
 )
-flow = st.Page(
-    "views/flow.py",
-    title="Plan Flow",
-    icon="🌊",
+initiatives = st.Page(
+    "views/initiatives.py",
+    title="Initiatives",
+    icon="🚀",
 )
 
-# Manage (CRUD) pages
+# Administration (CRUD) pages
 manage_org = st.Page(
     "views/manage_org_units.py",
-    title="Org Units",
+    title="Organization",
     icon="🏛️",
 )
 manage_krs_decommissioned = None  # Manage Key Results page retired; KR editing
@@ -92,7 +101,7 @@ manage_krs_decommissioned = None  # Manage Key Results page retired; KR editing
 create_initiative = st.Page(
     "views/create_initiative.py",
     title="Create Initiative",
-    icon="🚀",
+    icon="➕",
 )
 
 
@@ -101,10 +110,11 @@ create_initiative = st.Page(
 # ---------------------------------------------------------------------------
 nav = st.navigation(
     {
+        "About": [about_page],
         "Plan": [annual_strategy, plan_quarter, flow],
-        "Track": [checkins, initiative_updates],
-        "Views": [hotspots, summary, objectives, initiatives],
-        "Manage": [manage_org, create_initiative],
+        "Check-ins": [checkins, initiative_updates],
+        "Executive Review": [hotspots, summary, objectives, initiatives],
+        "Administration": [manage_org, create_initiative],
     }
 )
 
@@ -120,14 +130,17 @@ with st.sidebar:
     st.divider()
     _scope_org = st.session_state.get("scope_org_name")
     _scope_period = st.session_state.get("scope_period")
+    _parts = []
+    if _scope_org:
+        _parts.append(f"📍 {_scope_org}")
+    else:
+        _parts.append("📍 All org units")
+    if _scope_period:
+        _parts.append(_scope_period)
+    st.caption("**Current scope**")
+    st.caption(" · ".join(_parts))
+    # Only show the reset button when there's actually something to reset
     if _scope_org or _scope_period:
-        _parts = []
-        if _scope_org:
-            _parts.append(f"📍 {_scope_org}")
-        if _scope_period:
-            _parts.append(_scope_period)
-        st.caption("**Current scope**")
-        st.caption(" · ".join(_parts))
         if st.button(
             "↻ Reset scope",
             use_container_width=True,
@@ -139,15 +152,25 @@ with st.sidebar:
             for _k in ("scope_org_id", "scope_org_name", "scope_period"):
                 st.session_state.pop(_k, None)
             st.rerun()
-    else:
-        st.caption("📍 _No scope picked yet_")
-        st.markdown(
-            "<span style='color:#9CA3AF;font-size:0.8em'>"
-            "Pick an org unit and period on any page — they'll stay "
-            "selected as you navigate."
-            "</span>",
-            unsafe_allow_html=True,
-        )
+
+    # --- Footer link block ---------------------------------------------
+    # A discreet always-visible anchor pointing to the repo. Deliberately
+    # small — the About page carries the real context. This just makes
+    # sure the link is one click away from wherever the user happens to
+    # be in the app.
+    st.divider()
+    st.markdown(
+        "<div style='font-size:0.8em;color:#6B7280;line-height:1.5'>"
+        "🌐 Demo · <a href='https://github.com/terrydougan-ai/okr-planning-app' "
+        "target='_blank' style='color:#6B7280;text-decoration:underline'>"
+        "view repo</a>"
+        "<br>"
+        "<span style='font-size:0.9em;color:#9CA3AF'>"
+        "Data may reset periodically"
+        "</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 nav.run()

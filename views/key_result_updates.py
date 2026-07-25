@@ -26,6 +26,12 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 
+# AI helpers — silently no-op when ANTHROPIC_API_KEY isn't configured
+from views._ai_helpers import is_ai_enabled, review_kr_checkin, render_review
+from views._analytics import track_page
+from views._ui_helpers import format_number
+
+
 
 # -----------------------------------------------------------------------------
 # Supabase
@@ -135,7 +141,8 @@ def fmt_date(ts) -> str:
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
-st.title("📈 Key Result Updates")
+track_page("Key Result Check-ins")
+st.title("📈 Key Result Check-ins")
 st.caption(
     "Update current values and add context notes for KRs. Quarterly KRs are "
     "tracked weekly; yearly aspirational KRs typically quarterly. Only "
@@ -408,7 +415,7 @@ def render_kr_box(kr):
         with h_start:
             st.markdown(
                 f"<div style='color:#6B7280;font-size:0.85em'>Start</div>"
-                f"<div style='font-size:0.95em'><b>{start} {unit}</b></div>",
+                f"<div style='font-size:0.95em'><b>{format_number(start)} {unit}</b></div>",
                 unsafe_allow_html=True,
             )
         with h_cur:
@@ -423,7 +430,7 @@ def render_kr_box(kr):
         with h_tgt:
             st.markdown(
                 f"<div style='color:#6B7280;font-size:0.85em'>Target</div>"
-                f"<div style='font-size:0.95em'><b>{target} {unit}</b><br>"
+                f"<div style='font-size:0.95em'><b>{format_number(target)} {unit}</b><br>"
                 f"<span style='color:#9CA3AF'>{grade:.0%} to goal</span></div>",
                 unsafe_allow_html=True,
             )
@@ -451,6 +458,72 @@ def render_kr_box(kr):
             }
         elif kr_id in pending:
             del pending[kr_id]
+
+        # --- AI review of this KR check-in ------------------------------
+        # Reads the CURRENT typed values (new_value, note_value) rather than
+        # what's saved — this way a team lead can iterate on the wording
+        # before committing to Save all.
+        #
+        # DELIBERATELY session-only (not persisted to DB) because a KR
+        # check-in note is ephemeral: type it, save it into the check_in
+        # history, note field returns to empty. Persisting the review to
+        # the KR row would make it look stale on every page load (there's
+        # no "current" note to compare against). So the review lives in
+        # session state, matching the transience of the underlying note.
+        # (Initiative reviews are different — they evaluate persistent
+        # state on the initiative row, so they persist to the DB.)
+        if is_ai_enabled():
+            _kr_review_key = f"kr_review_{kr_id}"
+
+            with st.expander("✨ Ask AI to review this check-in", expanded=False):
+                st.caption(
+                    "Claude Sonnet will look at the new value, the note, and "
+                    "recent history — and tell you whether the note reads "
+                    "the trend or just reports a number. Review is temporary "
+                    "and disappears when you leave the page."
+                )
+                _krc1, _krc2 = st.columns([1, 3])
+                with _krc1:
+                    _existing = st.session_state.get(_kr_review_key)
+                    _kr_btn_label = "🔄 Regenerate" if _existing else "✨ Review"
+                    if st.button(
+                        _kr_btn_label,
+                        key=f"kr_review_btn_{kr_id}_{scope_key}",
+                        use_container_width=True,
+                    ):
+                        # Build recent history package
+                        _hist_df = _kr_check_in_history(kr_id, limit=5)
+                        _recent_history = []
+                        for _, _r in _hist_df.iterrows():
+                            _recent_history.append({
+                                "value": _r.get("value"),
+                                "note": _r.get("note"),
+                                "when": fmt_date(_r.get("created_at")),
+                            })
+                        _checkin_pkg = {
+                            "kr_title": kr.get("title", "?"),
+                            "unit": unit,
+                            "start": start,
+                            "target": target,
+                            "previous_value": stored_current,
+                            "new_value": new_value,
+                            "recent_history": _recent_history,
+                            "note": note_value.strip(),
+                        }
+                        with st.spinner("Reviewing..."):
+                            _review = review_kr_checkin(_checkin_pkg)
+                        if _review:
+                            st.session_state[_kr_review_key] = _review
+                            st.rerun()
+                        else:
+                            st.warning(
+                                "Couldn't generate a review right now. Try again in a moment."
+                            )
+
+                _cached_kr_review = st.session_state.get(_kr_review_key)
+                if _cached_kr_review:
+                    st.markdown("---")
+                    render_review(_cached_kr_review)
 
         # History disclosure (collapsed by default)
         history_df = _kr_check_in_history(kr_id, limit=5)
@@ -633,6 +706,17 @@ else:
                     success_count += 1
                 except Exception as e:
                     errors.append(f"KR {kr_id}: {e}")
+            # Clear the pending dict AND explicitly clear each note widget's
+            # session state. This matters for notes specifically: the note
+            # widget uses a `key=`, so once typed, its value persists in
+            # session_state until we delete the key. Without this, on rerun
+            # the widget re-reads the old note, `note_changed` is True again,
+            # and pending re-populates — leaving the "pending change" banner
+            # showing even though the save succeeded.
+            for _kr_id in list(pending.keys()):
+                _note_widget_key = f"note_{_kr_id}_{scope_key}"
+                if _note_widget_key in st.session_state:
+                    del st.session_state[_note_widget_key]
             st.session_state[pending_state_key] = {}
             clear_cache()
             if errors:
@@ -650,6 +734,13 @@ else:
             st.rerun()
     with bc3:
         if st.button("↩️ Discard", use_container_width=True):
+            # Same pattern as Save: clear the note widget keys as well as
+            # the pending dict, otherwise discarding leaves the typed notes
+            # visible in their widgets even though pending is cleared.
+            for _kr_id in list(st.session_state.get(pending_state_key, {}).keys()):
+                _note_widget_key = f"note_{_kr_id}_{scope_key}"
+                if _note_widget_key in st.session_state:
+                    del st.session_state[_note_widget_key]
             st.session_state[pending_state_key] = {}
             st.rerun()
 

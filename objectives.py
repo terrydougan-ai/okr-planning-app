@@ -12,7 +12,6 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 from views._analytics import track_page
-from views._ui_helpers import format_number
 
 
 
@@ -382,7 +381,7 @@ for _, obj in visible_objectives.iterrows():
                     f"<span style='color:#6B7280;font-size:0.85em'> to goal</span>"
                     f"<br>"
                     f"<span style='color:#9CA3AF;font-size:0.8em'>"
-                    f"{format_number(_start)} → <b>{format_number(_current)}</b> → {format_number(_target)} {unit}"
+                    f"{_start} → <b>{_current}</b> → {_target} {unit}"
                     f"</span></div>",
                     unsafe_allow_html=True,
                 )

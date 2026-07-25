@@ -28,6 +28,8 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 from supabase import create_client, Client
+from views._analytics import track_page
+
 
 
 # -----------------------------------------------------------------------------
@@ -137,6 +139,7 @@ def sort_key_for_initiative(init):
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
+track_page("Initiatives")
 st.title("🚀 Initiatives")
 st.caption(
     "Read-only structural view of the initiative portfolio — sibling to "
@@ -236,6 +239,9 @@ if selected_org_label != ALL_ORGS_LABEL:
         st.session_state["scope_org_name"] = ou_name_by_id.get(
             _scope_id, selected_org_label
         )
+else:
+    st.session_state.pop("scope_org_id", None)
+    st.session_state.pop("scope_org_name", None)
 
 
 # -----------------------------------------------------------------------------

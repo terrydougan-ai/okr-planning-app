@@ -29,6 +29,9 @@ How this differs from Plan a Quarter:
 import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
+from views._analytics import track_page
+from views._ui_helpers import format_number
+
 
 
 # -----------------------------------------------------------------------------
@@ -121,8 +124,8 @@ def format_kr_value(kr) -> str:
     current = kr.get("current_value")
     target = kr.get("target_value")
     if current is None:
-        return f"_no current value_ · target {target} {unit}"
-    return f"{current} / {target} {unit}"
+        return f"_no current value_ · target {format_number(target)} {unit}"
+    return f"{format_number(current)} / {format_number(target)} {unit}"
 
 
 def indicator_badge(t) -> str:
@@ -191,7 +194,8 @@ def obj_status_chip(status: str) -> str:
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
-st.title("📄 Plan Narrative")
+track_page("Executive Narrative")
+st.title("📄 Executive Narrative")
 st.caption(
     "The plan as a document. Strategy cascades into yearly and quarterly "
     "objectives with their KRs, then every initiative in scope is listed "
@@ -312,8 +316,10 @@ st.session_state["scope_period"] = selected_period
 
 
 # -----------------------------------------------------------------------------
-# Walk org chain up from selected → root (for cascade context)
+# Walk org tree to determine what to show: ancestors (for context) + self +
+# descendants (so picking a parent org includes its teams' plans)
 # -----------------------------------------------------------------------------
+# Ancestors, root-first — provides the strategic context above the selection
 ids_up: list = []
 visited: set = set()
 cur = selected_ou_id
@@ -321,7 +327,22 @@ while cur is not None and cur not in visited:
     ids_up.append(cur)
     visited.add(cur)
     cur = parent_by_id.get(cur)
-chain_ids = list(reversed(ids_up))  # root first
+ancestors_and_self = list(reversed(ids_up))  # root-first, ending at selected
+
+# Descendants of selected, walked breadth-first so nearer children come first
+descendant_ids: list = []
+_stack = [c["id"] for c in children_by_parent.get(selected_ou_id, [])]
+_seen: set = set()
+while _stack:
+    _cid = _stack.pop(0)
+    if _cid in _seen:
+        continue
+    _seen.add(_cid)
+    descendant_ids.append(_cid)
+    _stack.extend(c["id"] for c in children_by_parent.get(_cid, []))
+
+# Combined render order: ancestors → self → descendants
+chain_ids = ancestors_and_self + descendant_ids
 
 
 # -----------------------------------------------------------------------------
@@ -331,7 +352,8 @@ st.divider()
 st.header("Planning Cascade")
 st.caption(
     f"How the plan reads, top to bottom — {selected_ou_name} · {selected_period}. "
-    "Ancestor units appear at the top with their strategy context."
+    "Ancestors appear at the top for strategic context; descendant teams follow "
+    "the selected unit so the whole family reads in one flow."
 )
 
 obj_title_by_id = (
@@ -455,10 +477,13 @@ for depth, ou_id in enumerate(chain_ids):
 
     st.write("")  # tiny gap between org-unit blocks
 
-# Unaligned section — quarterlies in scope with no in-scope yearly parent
+# Unaligned section — quarterlies in scope with no in-scope yearly parent.
+# Uses the same family (selected + descendants) as the cascade above so a
+# child-team's unaligned quarterly still surfaces when a parent org is picked.
+_family_org_ids = set(chain_ids) if 'chain_ids' in dir() else {selected_ou_id}
 unparented_q = (
     objectives[
-        (objectives["org_unit_id"] == selected_ou_id)
+        objectives["org_unit_id"].isin(_family_org_ids)
         & (objectives["period"] == selected_period)
     ]
     if not objectives.empty else pd.DataFrame()

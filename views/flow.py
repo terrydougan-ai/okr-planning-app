@@ -26,6 +26,10 @@ import pandas as pd
 import plotly.graph_objects as go
 from supabase import create_client, Client
 
+# Analytics — silently no-op when POSTHOG_API_KEY isn't configured
+from views._analytics import track_page
+from views._ui_helpers import format_number
+
 
 # -----------------------------------------------------------------------------
 # Supabase
@@ -108,7 +112,8 @@ ORPHAN_LINK_COLOR = "rgba(239, 68, 68, 0.25)"
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
-st.title("🌊 Flow")
+track_page("Planning Flow")
+st.title("🌊 Planning Flow")
 st.caption(
     "The planning portfolio as a Sankey. Four layers: yearly → quarterly → "
     "KRs → initiatives. Bar widths are predicted $ value. Red nodes flag gaps."
@@ -187,26 +192,54 @@ with fc2:
         help="Pick a quarter, a fiscal year, or all periods.",
     )
 
-# Persist scope (only when a specific org / period is picked; 'All' stays local
-# to Flow so it doesn't blank out scope for other pages).
+# Persist scope. Selecting "All" now clears the scope key so other pages
+# consistently default to their broadest view too. Earlier behavior kept
+# "All" local to Flow, which created asymmetric persistence — user picks
+# a team → sticks, user picks All → doesn't stick.
 if selected_ou != "All org units" and selected_ou in ou_id_by_name:
     st.session_state["scope_org_id"] = ou_id_by_name[selected_ou]
     st.session_state["scope_org_name"] = selected_ou
+else:
+    st.session_state.pop("scope_org_id", None)
+    st.session_state.pop("scope_org_name", None)
+
 if selected_period != "All periods":
     st.session_state["scope_period"] = selected_period
+else:
+    st.session_state.pop("scope_period", None)
 
 
 # -----------------------------------------------------------------------------
 # Filter data — yearly + quarterly together, with cascade awareness
 # -----------------------------------------------------------------------------
 # Start by filtering by org unit (applies to both yearly and quarterly equally).
+# When a parent org is picked, include the family (self + descendants) so
+# picking "Acme Analytics" surfaces every team's planning, not just objectives
+# attached to the container node itself. This matches Hotspots' behavior.
 filtered_objs = objectives.copy()
 if selected_ou != "All org units":
     selected_ou_id = next(
         (oid for oid, name in ou_name_by_id.items() if name == selected_ou), None
     )
     if selected_ou_id is not None:
-        filtered_objs = filtered_objs[filtered_objs["org_unit_id"] == selected_ou_id]
+        # Build the family (self + all descendants) via a small tree walk
+        _children_by_parent: dict = {}
+        for _, _row in org_units.iterrows():
+            _pid = _row["parent_unit_id"]
+            if _pid != _pid:  # NaN
+                _pid = None
+            _children_by_parent.setdefault(_pid, []).append(_row["id"])
+
+        family_ids = {selected_ou_id}
+        stack = list(_children_by_parent.get(selected_ou_id, []))
+        while stack:
+            child_id = stack.pop()
+            if child_id in family_ids:
+                continue
+            family_ids.add(child_id)
+            stack.extend(_children_by_parent.get(child_id, []))
+
+        filtered_objs = filtered_objs[filtered_objs["org_unit_id"].isin(family_ids)]
 
 # Period filter, with cascade awareness:
 #   - "All periods" → show all yearly + all quarterly in the org-filtered set
@@ -448,9 +481,9 @@ for i, (_, kr) in enumerate(krs_sorted.iterrows()):
     )
     hover = (
         f"<b>{kr['title']}</b><br>"
-        f"Start {kr.get('start_value')} → "
-        f"Current {kr.get('current_value')} → "
-        f"Target {kr.get('target_value')} {unit}"
+        f"Start {format_number(kr.get('start_value'))} → "
+        f"Current {format_number(kr.get('current_value'))} → "
+        f"Target {format_number(kr.get('target_value'))} {unit}"
         f"{orphan_note}"
     )
     add_node("key_result", kr["id"], kr["title"], hover, is_orphan=is_orphan)

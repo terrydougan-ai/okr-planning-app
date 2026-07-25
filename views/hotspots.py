@@ -15,6 +15,12 @@ import pandas as pd
 from datetime import date
 from supabase import create_client, Client
 
+# AI helpers — silently no-op when ANTHROPIC_API_KEY isn't configured
+from views._ai_helpers import is_ai_enabled, summarize_hotspots
+from views._analytics import track_page
+from views._ui_helpers import format_number
+
+
 
 # Thresholds — kept consistent with Hotspots v1 + the rest of the app
 KR_GREEN_THRESHOLD = 0.7
@@ -154,6 +160,7 @@ MS_LABELS = {
 # -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
+track_page("Hotspots")
 st.title("🔥 Hotspots")
 st.caption(
     "Experimental layout — same data as Hotspots, organized differently. "
@@ -261,11 +268,16 @@ with pc2:
         "**Period**", options=period_options, index=default_period_idx,
     )
 
+# Persist scope selection so it carries across pages. Selecting "All org
+# units" clears the scope (so other pages default to their broadest view too).
 if selected_org_label != ALL_ORGS_LABEL:
     _scope_id = tree_label_to_id.get(selected_org_label)
     if _scope_id:
         st.session_state["scope_org_id"] = _scope_id
         st.session_state["scope_org_name"] = ou_name_by_id.get(_scope_id, selected_org_label)
+else:
+    st.session_state.pop("scope_org_id", None)
+    st.session_state.pop("scope_org_name", None)
 st.session_state["scope_period"] = selected_period
 
 selected_year = year_from_period(selected_period)
@@ -638,8 +650,8 @@ def _render_red_kr(r):
         f"<span style='color:#6B7280;font-size:0.9em'>"
         f"(under: {r['obj_title']})</span><br>"
         f"<span style='color:#6B7280;font-size:0.9em'>"
-        f"current <b>{kr.get('current_value')} {unit}</b> · "
-        f"target {kr.get('target_value')} {unit} · "
+        f"current <b>{format_number(kr.get('current_value'))} {unit}</b> · "
+        f"target {format_number(kr.get('target_value'))} {unit} · "
         f"{r['grade']:.0%} to goal · owner: {owner}"
         f"{note_part}"
         f"</span></div>",
@@ -902,6 +914,164 @@ def _render_rollup(parent_id, depth):
         h = _rollup(ou_id, rollup_memo)
         _render_org_card_v2(r, h, depth)
         _render_rollup(ou_id, depth + 1)
+
+
+# -----------------------------------------------------------------------------
+# AI-generated exec summary
+# -----------------------------------------------------------------------------
+# Runs Sonnet 4.6 over a compact structured brief and shows a 3-5 sentence
+# "what should I focus on" summary above the org cards. Cached in session
+# state keyed by scope + a hash of the underlying data, so switching scopes
+# regenerates but reloading the page doesn't re-hit the API.
+#
+# Silently omitted if ANTHROPIC_API_KEY isn't configured.
+if is_ai_enabled():
+    # Build the structured brief. Only computed for the in-scope orgs so
+    # switching to "All org units" vs a specific team produces materially
+    # different summaries.
+    def _build_hotspots_brief():
+        """Compact structured brief for the AI. Reuses the same rollup and
+        problem-bucket math the cards use — the summary is generated from
+        the same data a leader is looking at, not raw tables."""
+        # Determine which orgs are in scope for the summary
+        if selected_org_label == ALL_ORGS_LABEL:
+            scope_ou_ids = set(in_scope_ou_ids)
+            scope_label = f"All org units · {selected_period}"
+        else:
+            root_id = tree_label_to_id[selected_org_label]
+            scope_ou_ids = _ou_family_ids(root_id) & in_scope_ou_ids
+            scope_label = (
+                f"{ou_name_by_id.get(root_id, selected_org_label)} · "
+                f"{selected_period}"
+            )
+
+        # Aggregate totals across all in-scope orgs
+        totals = {
+            "kr_red": 0, "kr_yellow": 0, "kr_green": 0,
+            "init_blocked_or_off": 0, "init_at_risk": 0, "init_on_track": 0,
+        }
+        team_briefs = []
+
+        for ou_id in scope_ou_ids:
+            h = _direct_health(ou_id)
+            for k in totals:
+                totals[k] += h.get(k, 0)
+
+            # Skip orgs that have nothing to report (no KRs, no initiatives)
+            _has_content = any(
+                h.get(k, 0) > 0 for k in
+                ("kr_red", "kr_yellow", "kr_green",
+                 "init_blocked_or_off", "init_at_risk", "init_on_track")
+            )
+            if not _has_content:
+                continue
+
+            probs = _problems_for_ou(ou_id)
+            rollup_h = _rollup(ou_id, rollup_memo)
+            team_briefs.append({
+                "name": ou_name_by_id.get(ou_id, "?"),
+                "rollup_color": _color_for_rollup(rollup_h),
+                "red_krs": [
+                    {
+                        "title": r["kr"].get("title", "?"),
+                        "grade": r["grade"],
+                        "unit": r["kr"].get("metric_unit", ""),
+                    }
+                    for r in probs.get("red_krs", [])[:3]
+                ],
+                "blocked_or_offtrack": [
+                    {
+                        "title": p["init"].get("title", "?"),
+                        "milestone_status": p["init"].get("milestone_status"),
+                        "exec_rag": p["init"].get("exec_rag"),
+                    }
+                    for p in probs.get("blocked_offtrack", [])[:3]
+                ],
+                "at_risk": [
+                    {"title": p["init"].get("title", "?")}
+                    for p in probs.get("at_risk_inits", [])[:2]
+                ],
+                "past_milestone": [
+                    {
+                        "title": p["init"].get("title", "?"),
+                        "due_date": str(p.get("due_date", "?")),
+                    }
+                    for p in probs.get("past_milestone", [])[:2]
+                ],
+            })
+
+        # Sort teams by severity (worst first) so the AI reads the concerning
+        # ones early
+        severity_order = {"🔴": 0, "🟡": 1, "🟢": 2, "⚪": 3}
+        team_briefs.sort(key=lambda t: severity_order.get(t["rollup_color"], 9))
+
+        return {
+            "scope_label": scope_label,
+            "totals": totals,
+            "teams": team_briefs,
+        }
+
+    # Cache key: scope + a hash of the totals (a simple proxy for "did the
+    # underlying data change"). If data changes, cache invalidates on its own.
+    _brief = _build_hotspots_brief()
+    _cache_key = f"hotspots_ai_summary_{selected_org_label}_{selected_period}"
+    _brief_signature = str(_brief["totals"])  # cheap change-detection
+    _sig_key = f"{_cache_key}__sig"
+
+    # Regenerate if scope changed, if data changed, or if user clicked refresh
+    _need_regen = (
+        _cache_key not in st.session_state
+        or st.session_state.get(_sig_key) != _brief_signature
+    )
+
+    with st.container(border=True):
+        _hc1, _hc2 = st.columns([5, 1])
+        with _hc1:
+            st.markdown(
+                "<div style='font-weight:600;font-size:1em;color:#374151'>"
+                "✨ AI-generated summary</div>",
+                unsafe_allow_html=True,
+            )
+        with _hc2:
+            if st.button(
+                "🔄 Refresh",
+                key="refresh_hotspots_summary",
+                use_container_width=True,
+                help="Regenerate the summary from the current data.",
+            ):
+                _need_regen = True
+                st.session_state.pop(_cache_key, None)
+
+        if _need_regen:
+            with st.spinner("Reading the data..."):
+                _summary = summarize_hotspots(_brief)
+            if _summary:
+                st.session_state[_cache_key] = _summary
+                st.session_state[_sig_key] = _brief_signature
+            else:
+                # API failed. Show previous summary if we have one, else a
+                # small note. Don't crash the page.
+                if _cache_key not in st.session_state:
+                    st.caption(
+                        "_Summary temporarily unavailable — the org cards "
+                        "below reflect the current state directly._"
+                    )
+                else:
+                    st.caption(
+                        "_Couldn't refresh; showing the previous summary._"
+                    )
+
+        _cached_summary = st.session_state.get(_cache_key)
+        if _cached_summary:
+            st.markdown(
+                f"<div style='color:#1F2937;font-size:0.95em;"
+                f"line-height:1.55;margin-top:6px'>{_cached_summary}</div>",
+                unsafe_allow_html=True,
+            )
+        st.caption(
+            "_Generated by Claude Sonnet from the same data shown below. "
+            "May miss nuance the cards make visible._"
+        )
 
 
 # -----------------------------------------------------------------------------
