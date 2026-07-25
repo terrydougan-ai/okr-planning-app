@@ -261,17 +261,45 @@ def summarize_hotspots(brief: dict) -> Optional[str]:
 
     brief_text = "\n".join(lines)
 
+    # Cross-functional patterns — added as a separate section. If present in
+    # the brief, they surface how work flows across team boundaries. This is
+    # the "connective tissue" a TPM cares about.
+    cross_section = ""
+    _cross_patterns = brief.get("cross_functional_patterns", [])
+    if _cross_patterns:
+        cross_lines = ["", "CROSS-FUNCTIONAL PATTERNS:"]
+        cross_lines.append(
+            f"({len(_cross_patterns)} initiatives are owned by one team but "
+            f"moving another team's KRs.)"
+        )
+        for _cp in _cross_patterns[:8]:  # cap for prompt length
+            _health = ""
+            if _cp.get("initiative_ms") and _cp.get("initiative_rag"):
+                if _cp["initiative_ms"] != _cp["initiative_rag"]:
+                    _health = (
+                        f" (team: {_cp['initiative_ms']}, exec: {_cp['initiative_rag']})"
+                    )
+                else:
+                    _health = f" ({_cp['initiative_ms']})"
+            cross_lines.append(
+                f"  - {_cp['contributing_team']}'s {_cp['initiative_title']}"
+                f" → {_cp['receiving_team']}'s {_cp['kr_title']}{_health}"
+            )
+        cross_section = "\n" + "\n".join(cross_lines)
+
     prompt = f"""You are a chief of staff writing a brief exec update on OKR execution.
 
 Below is a compact brief of the current state. Read it and write a 3-5 sentence executive summary that a busy VP could scan in 20 seconds. Prioritize: what needs attention, what's escalating, what's healthy.
 
 BRIEF:
-{brief_text}
+{brief_text}{cross_section}
 
 WRITING GUIDELINES:
 - Open with the most important thing — a specific concern by name, or if all healthy, say so directly.
 - Reference initiatives and KRs by their actual names. Don't say "one team" when you can say "Go-to-Market."
 - If team-view and exec-view RAG diverge on an initiative, that divergence is itself worth flagging.
+- If a cross-functional pattern is present AND the contributing initiative is at-risk or blocked, mention it. Example: "Platform's caching work is off-track — worth flagging because it's moving Product's activation KR." This kind of dependency is the connective-tissue TPM work.
+- If cross-functional patterns are healthy (or absent), don't force mention.
 - Do not restate the brief; interpret it.
 - Do not use bullet points or headers. Prose only.
 - Do not begin with "This summary" or "In summary" or any other meta-opener.
