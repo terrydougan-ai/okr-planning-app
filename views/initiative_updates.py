@@ -607,86 +607,86 @@ for _, init in visible_sorted.iterrows():
                 ),
             )
 
-            # Next Major Milestone (text + date)
-            um1, um2 = st.columns([3, 1])
-            with um1:
-                # If an AI draft is pending, use its milestone text; otherwise
-                # use the saved value.
-                _default_ms_text = (
-                    _pending_draft.get("next_milestone_text", "")
+                # Next Major Milestone (text + date)
+                um1, um2 = st.columns([3, 1])
+                with um1:
+                    # If an AI draft is pending, use its milestone text; otherwise
+                    # use the saved value.
+                    _default_ms_text = (
+                        _pending_draft.get("next_milestone_text", "")
+                        if _pending_draft
+                        else safe_str(init.get("next_milestone_text"))
+                    )
+                    ui_next_ms_text = st.text_input(
+                        "Next Major Milestone",
+                        value=_default_ms_text,
+                        placeholder="e.g. Onboarding redesign deployed to 100% of new signups",
+                    )
+                with um2:
+                    cur_date = parse_date(init.get("next_milestone_date"))
+                    ui_next_ms_date = st.date_input(
+                        "Milestone date",
+                        value=cur_date,
+                        format="YYYY-MM-DD",
+                    )
+
+                st.markdown("---")
+                st.markdown("**Exec reporting**")
+
+                # Exec RAG
+                cur_exec = init.get("exec_rag")
+                cur_exec_idx = DELIVERY_STATES.index(cur_exec) if isinstance(cur_exec, str) and cur_exec in DELIVERY_STATES else 0
+                ui_exec_rag = st.selectbox(
+                    "Exec RAG",
+                    options=DELIVERY_STATES,
+                    index=cur_exec_idx,
+                    format_func=lambda s: DELIVERY_LABELS.get(s, s),
+                    help=(
+                        "The owner's curated signal for exec reporting. Often "
+                        "matches Milestone Delivery Status, but the owner may "
+                        "choose to surface a different signal externally."
+                    ),
+                )
+
+                # Exec narrative
+                # If an AI draft is pending, use its narrative; otherwise
+                # use the saved value from the DB.
+                _default_narrative = (
+                    _pending_draft.get("exec_narrative", "")
                     if _pending_draft
-                    else safe_str(init.get("next_milestone_text"))
+                    else safe_str(init.get("exec_narrative"))
                 )
-                ui_next_ms_text = st.text_input(
-                    "Next Major Milestone",
-                    value=_default_ms_text,
-                    placeholder="e.g. Onboarding redesign deployed to 100% of new signups",
-                )
-            with um2:
-                cur_date = parse_date(init.get("next_milestone_date"))
-                ui_next_ms_date = st.date_input(
-                    "Milestone date",
-                    value=cur_date,
-                    format="YYYY-MM-DD",
+                ui_exec_narrative = st.text_area(
+                    "Exec narrative",
+                    value=_default_narrative,
+                    height=80,
+                    placeholder=(
+                        "What should execs know about this initiative right "
+                        "now? Risks, asks, key context. 2–4 sentences."
+                    ),
                 )
 
-            st.markdown("---")
-            st.markdown("**Exec reporting**")
-
-            # Exec RAG
-            cur_exec = init.get("exec_rag")
-            cur_exec_idx = DELIVERY_STATES.index(cur_exec) if isinstance(cur_exec, str) and cur_exec in DELIVERY_STATES else 0
-            ui_exec_rag = st.selectbox(
-                "Exec RAG",
-                options=DELIVERY_STATES,
-                index=cur_exec_idx,
-                format_func=lambda s: DELIVERY_LABELS.get(s, s),
-                help=(
-                    "The owner's curated signal for exec reporting. Often "
-                    "matches Milestone Delivery Status, but the owner may "
-                    "choose to surface a different signal externally."
-                ),
-            )
-
-            # Exec narrative
-            # If an AI draft is pending, use its narrative; otherwise
-            # use the saved value from the DB.
-            _default_narrative = (
-                _pending_draft.get("exec_narrative", "")
-                if _pending_draft
-                else safe_str(init.get("exec_narrative"))
-            )
-            ui_exec_narrative = st.text_area(
-                "Exec narrative",
-                value=_default_narrative,
-                height=80,
-                placeholder=(
-                    "What should execs know about this initiative right "
-                    "now? Risks, asks, key context. 2–4 sentences."
-                ),
-            )
-
-            save_updates = st.form_submit_button("💾 Save updates", type="primary")
-            if save_updates:
-                payload = {
-                    "progress_pct": ui_progress,
-                    "milestone_status": ui_ms or None,
-                    "next_milestone_text": ui_next_ms_text.strip() or None,
-                    "next_milestone_date": ui_next_ms_date.isoformat() if ui_next_ms_date else None,
-                    "exec_rag": ui_exec_rag or None,
-                    "exec_narrative": ui_exec_narrative.strip() or None,
-                }
-                try:
-                    sb.table("initiative").update(payload).eq("id", init_id).execute()
-                    # Clear any pending AI draft — the PM has committed their
-                    # (possibly-edited) version to the record. Next visit
-                    # reads from the DB.
-                    st.session_state.pop(_draft_key, None)
-                    clear_cache()
-                    st.success("Updates saved.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Save failed: {e}")
+                save_updates = st.form_submit_button("💾 Save updates", type="primary")
+                if save_updates:
+                    payload = {
+                        "progress_pct": ui_progress,
+                        "milestone_status": ui_ms or None,
+                        "next_milestone_text": ui_next_ms_text.strip() or None,
+                        "next_milestone_date": ui_next_ms_date.isoformat() if ui_next_ms_date else None,
+                        "exec_rag": ui_exec_rag or None,
+                        "exec_narrative": ui_exec_narrative.strip() or None,
+                    }
+                    try:
+                        sb.table("initiative").update(payload).eq("id", init_id).execute()
+                        # Clear any pending AI draft — the PM has committed their
+                        # (possibly-edited) version to the record. Next visit
+                        # reads from the DB.
+                        st.session_state.pop(_draft_key, None)
+                        clear_cache()
+                        st.success("Updates saved.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Save failed: {e}")
 
         # --- AI review of this initiative check-in --------------------------
         # Sits OUTSIDE the form (buttons inside a form act as submit buttons).
