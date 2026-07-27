@@ -890,19 +890,19 @@ Draft ONE text field: the exec_narrative.
 exec_narrative — a 3-5 sentence narrative for a VP reader.
 
 WHAT AN EXEC NARRATIVE SHOULD DO
-An exec narrative isn't a chronology of what happened. It's a framing for a busy leader who needs to know: how is this initiative doing overall, what's the state, what (if anything) needs their attention or a decision. The reader is a VP, not a project manager. They want the assessment first, the evidence second.
+An exec narrative isn't a chronology of what happened. It's a framing for a busy leader who needs to know: how is this initiative doing overall, what's the state, what (if anything) needs their attention or a decision. The reader is a VP or C-level exec — often from a different function than the initiative's owning team. A Platform initiative may be read by a CPO who cares about customer impact and downstream KRs, not internal engineering vocabulary. A GTM initiative may be read by a CTO who cares about scale implications. The narrative should be legible across functions. They want the assessment first, the evidence second.
 
 STRUCTURE
-- **Opening sentence (the lead)**: a single assessment sentence naming the overall state. Not a status word ("at risk") — a stance sentence. Examples of good opens:
-  - "This initiative is at material risk of missing its Q3 target due to unresolved concurrency issues in the caching layer."
-  - "Rollout is meaningfully progressing on the lower-risk query paths, but the harder tier of work has stalled and needs a decision."
-  - "Bug reduction is on track but one high-severity issue represents the primary tail risk for the September release."
-  - "Execution is healthy — the team has hit each milestone on schedule and impact on the KR is materializing."
-  Do NOT open with facts like "Nine of twelve bugs are fixed" or "The team has migrated four query types." Facts support the stance; they don't lead it.
+- **Opening sentence (the lead)**: a single assessment sentence naming the overall state AND its business implication. Frame the stance in terms a cross-functional exec can parse — impact on KRs, on customers, on schedule, on strategy — not purely internal-technical framing. Examples of good opens:
+  - "This initiative is at material risk of missing Q3, which puts Product's activation KR at risk downstream — an unresolved architectural issue in the caching layer is the root cause."
+  - "Rollout is progressing on the low-risk tiers of work but has stalled on the harder tier, and a decision on scope or timing is needed to hold the Q3 commitment."
+  - "The initiative is on track to hit Q3, but one open engineering risk represents the primary tail risk to the September customer commitment."
+  - "Execution is healthy — the team has hit each milestone on schedule and KR impact is materializing as modeled."
+  Do NOT open with technical facts like "Nine of twelve bugs are fixed" or "The team has migrated four query types" — those are evidence, not the lead. Do NOT lead with only-internal framing like "the join-path deployment has stalled" without connecting it to a business outcome.
 
-- **Middle 2-3 sentences (the evidence)**: the specific evidence supporting the opening assessment. This IS where you cite ticket numbers, incidents, meeting names, KR gaps, specific quotes from team messages when they matter. Be direct about what the signals show, especially if they contradict the previous narrative or the exec_rag field. Do not smooth over problems with soft language like "some minor issues." Name the actual issue.
+- **Middle 2-3 sentences (the evidence)**: the specific evidence supporting the opening assessment. This IS where you cite ticket numbers, incidents, meeting names, KR gaps, specific quotes from team messages when they matter. Technical terminology is fine here — a CPO reading evidence will skim past what she doesn't grasp and trust that a CTO would grasp it. Be direct about what the signals show, especially if they contradict the previous narrative or the exec_rag field. Do not smooth over problems with soft language like "some minor issues." Name the actual issue.
 
-- **Closing sentence (the ask, if there is one)**: if there's a decision needed, a risk worth flagging, or a specific commitment that would clarify things, name it in one sentence. If the situation is healthy and self-managing, close with what the next confirming event is. Do not close with vague forward-looking language like "the team will continue to monitor."
+- **Closing sentence (the ask, if there is one)**: if there's a decision needed, a risk worth flagging, or a specific commitment that would clarify things, name it in one sentence. Frame the ask so a cross-functional exec knows what's being asked of whom. If the situation is healthy and self-managing, close with what the next confirming event is. Do not close with vague forward-looking language like "the team will continue to monitor."
 
 STYLE
 - Direct, specific, honest about risk. The voice of a competent PM writing under time pressure.
