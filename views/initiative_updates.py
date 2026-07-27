@@ -612,9 +612,14 @@ for _, init in visible_sorted.iterrows():
                 with um1:
                     # If an AI draft is pending, use its milestone text; otherwise
                     # use the saved value.
+                    # AI no longer drafts next_milestone_text — that field is
+                    # release-level and human-owned. If a pending AI draft has
+                    # this field set (older drafts), use it; otherwise fall
+                    # back to the saved value.
+                    _ai_ms_text = _pending_draft.get("next_milestone_text", "") if _pending_draft else ""
                     _default_ms_text = (
-                        _pending_draft.get("next_milestone_text", "")
-                        if _pending_draft
+                        _ai_ms_text
+                        if _ai_ms_text
                         else safe_str(init.get("next_milestone_text"))
                     )
                     ui_next_ms_text = st.text_input(
@@ -659,7 +664,7 @@ for _, init in visible_sorted.iterrows():
                 ui_exec_narrative = st.text_area(
                     "Exec narrative",
                     value=_default_narrative,
-                    height=80,
+                    height=180,
                     placeholder=(
                         "What should execs know about this initiative right "
                         "now? Risks, asks, key context. 2–4 sentences."
@@ -732,7 +737,13 @@ for _, init in visible_sorted.iterrows():
                 and _saved_sig != _current_signature
             )
 
-            with st.expander("✨ Ask AI to review this update", expanded=False):
+            with st.container(border=True):
+                st.markdown(
+                    "<div style='font-weight:600;font-size:0.95em;"
+                    "color:#374151;margin-bottom:4px'>"
+                    "✨ Ask AI to review this update</div>",
+                    unsafe_allow_html=True,
+                )
                 st.caption(
                     "Claude Sonnet will read the whole update — status, "
                     "milestone, narrative, delivery % — and give you feedback "

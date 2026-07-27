@@ -885,30 +885,37 @@ Before writing the draft, silently perform this analysis:
 Then write the draft.
 
 TASK
-Draft the two text fields:
+Draft ONE text field: the exec_narrative.
 
-1. exec_narrative — a 3-5 sentence narrative for a VP reader.
-   - Lead with what the signals show, not with a status summary. If there's an unresolved blocker, incident, or rescheduled decision, that's the lead.
-   - Cite specific signal evidence: ticket numbers (BUG-XXXX, INC-XXXX), specific incidents, specific meetings ("architectural review rescheduled twice"), specific sentiment from team messages.
-   - If the signals contradict the previous narrative or the exec_rag setting, NAME THE CONTRADICTION. Do not smooth over it. Do not use soft language like "some minor issues" — say what the actual issue is.
-   - If the previous narrative claimed something the signals don't support, do NOT repeat that claim.
-   - If signals show a customer, engineer, or partner by name and it's relevant, use their name.
+exec_narrative — a 3-5 sentence narrative for a VP reader.
 
-2. next_milestone_text — one sentence describing the concrete next thing that would move this initiative forward. When signals suggest a specific blocker or dependency, name the unblock as the next milestone. Do not use vague language like "continue progress" or "complete rollout."
+WHAT AN EXEC NARRATIVE SHOULD DO
+An exec narrative isn't a chronology of what happened. It's a framing for a busy leader who needs to know: how is this initiative doing overall, what's the state, what (if anything) needs their attention or a decision. The reader is a VP, not a project manager. They want the assessment first, the evidence second.
 
-WRITING PRINCIPLES
-- The best drafts read like a competent PM writing honestly under time pressure — direct, specific, honest about risk.
-- If ambient signals are absent, note that — don't fabricate context.
-- Do NOT open with "This update covers..." or other meta-language.
-- Do NOT include content just because it was in the previous narrative. Only include it if signals support it.
-- Keep exec_narrative under 130 words. Keep next_milestone_text under 25 words.
+STRUCTURE
+- **Opening sentence (the lead)**: a single assessment sentence naming the overall state. Not a status word ("at risk") — a stance sentence. Examples of good opens:
+  - "This initiative is at material risk of missing its Q3 target due to unresolved concurrency issues in the caching layer."
+  - "Rollout is meaningfully progressing on the lower-risk query paths, but the harder tier of work has stalled and needs a decision."
+  - "Bug reduction is on track but one high-severity issue represents the primary tail risk for the September release."
+  - "Execution is healthy — the team has hit each milestone on schedule and impact on the KR is materializing."
+  Do NOT open with facts like "Nine of twelve bugs are fixed" or "The team has migrated four query types." Facts support the stance; they don't lead it.
+
+- **Middle 2-3 sentences (the evidence)**: the specific evidence supporting the opening assessment. This IS where you cite ticket numbers, incidents, meeting names, KR gaps, specific quotes from team messages when they matter. Be direct about what the signals show, especially if they contradict the previous narrative or the exec_rag field. Do not smooth over problems with soft language like "some minor issues." Name the actual issue.
+
+- **Closing sentence (the ask, if there is one)**: if there's a decision needed, a risk worth flagging, or a specific commitment that would clarify things, name it in one sentence. If the situation is healthy and self-managing, close with what the next confirming event is. Do not close with vague forward-looking language like "the team will continue to monitor."
+
+STYLE
+- Direct, specific, honest about risk. The voice of a competent PM writing under time pressure.
+- Match a VP's attention: what would they need to know to nod, or to ask a follow-up?
+- Do not repeat claims from the previous narrative if the signals don't support them.
+- Do not open with "This update covers..." or other meta-language.
+- Keep it under 130 words.
 
 Return ONLY a JSON object. No prose, no markdown, no code fences.
 
 Structure:
 {{
-  "exec_narrative": "...",
-  "next_milestone_text": "..."
+  "exec_narrative": "..."
 }}
 
 Draft now."""
@@ -935,7 +942,9 @@ Draft now."""
 
         return {
             "exec_narrative": str(parsed.get("exec_narrative", "")).strip(),
-            "next_milestone_text": str(parsed.get("next_milestone_text", "")).strip(),
+            # Intentionally empty: the AI no longer drafts next_milestone_text.
+            # That field holds release-level milestones the human owns.
+            "next_milestone_text": "",
         }
 
     except Exception as e:
