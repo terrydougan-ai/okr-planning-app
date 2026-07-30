@@ -89,17 +89,30 @@ def _try_load(table_name: str, required: bool = False) -> pd.DataFrame:
       optional tables like the ambient signals).
     """
     try:
+        import time as _t
+        _start = _t.time()
         result = sb.table(table_name).select("*").execute()
+        _elapsed = _t.time() - _start
+        # Record timing in session state so we can diagnose slow queries
+        _timings = st.session_state.get("_prio_load_timings", {})
+        _timings[table_name] = {"seconds": round(_elapsed, 2), "rows": len(result.data)}
+        st.session_state["_prio_load_timings"] = _timings
         return pd.DataFrame(result.data)
     except Exception as e:
+        _timings = st.session_state.get("_prio_load_timings", {})
+        _timings[table_name] = {"error": str(e)}
+        st.session_state["_prio_load_timings"] = _timings
         if required:
             st.error(f"Failed to load `{table_name}` from Supabase: {e}")
             raise
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=60)
+# Note: we do NOT wrap load_all with @st.cache_data on this page while
+# diagnosing. Caching hides which specific query stalls on the first run.
 def load_all():
+    # Reset per-load timing state
+    st.session_state["_prio_load_timings"] = {}
     return {
         # Required tables — bail loudly if these can't load
         "initiatives": _try_load("initiative", required=True),
@@ -107,7 +120,8 @@ def load_all():
         "key_results": _try_load("key_result", required=True),
         "objectives": _try_load("objective", required=True),
         "org_units": _try_load("org_unit", required=True),
-        # Optional tables — degrade gracefully
+        # Optional tables — degrade gracefully. If any of these are slow,
+        # the diagnostic panel will show it.
         "business_cases": _try_load("business_case"),
         "engineering_activity": _try_load("engineering_activity"),
         "team_message": _try_load("team_message"),
@@ -443,30 +457,48 @@ team_message = data["team_message"]
 calendar_event = data["calendar_event"]
 
 # ---- Temporary diagnostic panel (remove after issue is confirmed fixed) ----
-# Shows what actually loaded so we can spot data disconnects.
+# Shows what actually loaded, per-table timings, and status distribution so we
+# can pinpoint slow queries or empty results.
 with st.expander("🔍 Data load diagnostic", expanded=initiatives.empty):
+    _timings = st.session_state.get("_prio_load_timings", {})
+    if _timings:
+        st.markdown("**Per-table load timings:**")
+        _timing_rows = []
+        for table_name, info in _timings.items():
+            if "error" in info:
+                _timing_rows.append(f"- **{table_name}**: ERROR — {info['error']}")
+            else:
+                _slow = " ⚠ slow" if info["seconds"] > 2.0 else ""
+                _timing_rows.append(
+                    f"- **{table_name}**: {info['rows']} rows in "
+                    f"{info['seconds']}s{_slow}"
+                )
+        st.markdown("\n".join(_timing_rows))
+    else:
+        st.markdown("_No timing data recorded._")
+
+    st.markdown("---")
     st.markdown(f"""
-    - **initiatives**: {len(initiatives)} rows
-    - **links (initiative_key_result)**: {len(links)} rows
-    - **key_results**: {len(key_results)} rows
-    - **objectives**: {len(objectives)} rows
-    - **org_units**: {len(org_units)} rows
-    - **business_cases**: {len(business_cases)} rows
-    - **engineering_activity**: {len(engineering_activity)} rows
-    - **team_message**: {len(team_message)} rows
-    - **calendar_event**: {len(calendar_event)} rows
+    **Row counts:**
+    - initiatives: {len(initiatives)}
+    - links: {len(links)}
+    - key_results: {len(key_results)}
+    - objectives: {len(objectives)}
+    - org_units: {len(org_units)}
+    - business_cases: {len(business_cases)}
+    - engineering_activity: {len(engineering_activity)}
+    - team_message: {len(team_message)}
+    - calendar_event: {len(calendar_event)}
     """)
     if not initiatives.empty:
         _statuses = (
             initiatives["status"].fillna("(null)").value_counts().to_dict()
         )
         st.markdown(f"**Initiative statuses**: `{_statuses}`")
-        st.markdown(f"**Initiative columns**: `{list(initiatives.columns)}`")
     if initiatives.empty:
         st.warning(
-            "Zero initiatives loaded — this is why the page shows 'No initiatives to prioritize'. "
-            "Check the browser network tab for the Supabase request, or try "
-            "🔄 Refresh in the sidebar to clear the cache."
+            "Zero initiatives loaded. See timings above — if a specific table "
+            "shows an error or very high seconds, that's the culprit."
         )
 
 if initiatives.empty:
