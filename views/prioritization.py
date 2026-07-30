@@ -144,103 +144,137 @@ def compute_impact_score(
 ) -> tuple:
     """Return (score_1_to_5, decomposition_dict).
 
+    Impact scoring anchors on **annualized revenue impact × time horizon**
+    (the lifetime impact figure), log-scaled so a $10M initiative doesn't
+    dominate a $1M one by 10x. That's the apples-to-apples signal — the
+    dollar amount, plus its horizon.
+
+    Everything else — KR gap severity, cross-functional weight, breadth —
+    are structural adjustments layered on top. They shift the anchor score
+    by ±0.5 total, not more. If revenue impact isn't quantified for an
+    initiative, we fall back to the structural signals alone and label it
+    as "not quantified" honestly.
+
     The decomposition dict is used both in the ranked list display and as
     context passed to the AI proposal.
     """
+    import math
     decomp = {}
     signals = []
 
-    # Baseline anchor: 2.5 (middle of the 1-5 range).
-    score = 2.5
-
-    if init_links.empty:
-        # An initiative not linked to any KR has effectively no impact
-        # measurable through the app's model. Sort to bottom.
-        decomp["linked_krs"] = 0
-        decomp["note"] = "No KR links — impact not measurable via app model"
-        return 1.0, decomp
-
-    linked_kr_ids = init_links["key_result_id"].tolist()
-    decomp["linked_krs"] = len(linked_kr_ids)
-
-    # 1) KR gap severity — how far from target across linked KRs. A KR at
-    #    30% of gap closed is a bigger impact opportunity than one at 90%.
-    gaps = []
-    for kr_id in linked_kr_ids:
-        kr_row = key_results_df[key_results_df["id"] == kr_id]
-        if kr_row.empty:
-            continue
-        kr = kr_row.iloc[0]
-        progress = _kr_progress(
-            kr.get("start_value"), kr.get("target_value"), kr.get("current_value")
-        )
-        gaps.append(1.0 - progress)  # remaining gap as fraction
-
-    if gaps:
-        avg_gap = sum(gaps) / len(gaps)
-        gap_boost = avg_gap * 1.5  # up to +1.5 for wide-open KRs
-        score += gap_boost
-        decomp["avg_kr_gap"] = round(avg_gap, 2)
-        signals.append(
-            f"linked KRs average {avg_gap:.0%} gap-to-target (+{gap_boost:.1f})"
-        )
-
-    # 2) Breadth — moving multiple KRs is a bigger bet
-    if len(linked_kr_ids) >= 2:
-        breadth_boost = min(0.5, (len(linked_kr_ids) - 1) * 0.25)
-        score += breadth_boost
-        signals.append(
-            f"moves {len(linked_kr_ids)} KRs (+{breadth_boost:.1f})"
-        )
-
-    # 3) Cross-functional — moving another team's KR is amplified impact
-    init_org_id = init.get("org_unit_id")
-    cross_functional = False
-    for kr_id in linked_kr_ids:
-        kr_row = key_results_df[key_results_df["id"] == kr_id]
-        if kr_row.empty:
-            continue
-        kr = kr_row.iloc[0]
-        obj_row = objectives_df[objectives_df["id"] == kr.get("objective_id")]
-        if obj_row.empty:
-            continue
-        obj = obj_row.iloc[0]
-        kr_org_id = obj.get("org_unit_id")
-        if kr_org_id and init_org_id and kr_org_id != init_org_id:
-            cross_functional = True
-            break
-    if cross_functional:
-        score += 0.5
-        decomp["cross_functional"] = True
-        signals.append("cross-functional (moves another team's KR) (+0.5)")
-    else:
-        decomp["cross_functional"] = False
-
-    # 4) Predicted KR impact magnitude — larger predicted deltas suggest
-    #    a bigger bet on paper. Normalized against typical scale.
-    predicted_sum = init_links["predicted_kr_impact"].fillna(0).sum()
-    if predicted_sum > 0:
-        # Small boost when a meaningful prediction is on record
-        score += 0.3
-        signals.append(f"predicted impact declared ({predicted_sum:.0f} units)")
-
-    # 5) Business case ROI — attached and favorable
+    # -------------------------------------------------------------------
+    # Anchor: lifetime revenue impact, log-scaled
+    # -------------------------------------------------------------------
     bc_row = business_cases_df[business_cases_df["initiative_id"] == init["id"]]
+    revenue_impact = None
+    horizon_years = 1
+    category = None
+
     if not bc_row.empty:
         bc = bc_row.iloc[0]
-        pv = bc.get("predicted_value") or 0
-        pc = bc.get("predicted_cost") or 0
-        if pc > 0 and pv > 0:
-            roi = pv / pc
-            if roi >= 3:
-                score += 0.5
-                signals.append(f"strong business case ROI ({roi:.1f}x)")
-            elif roi >= 1.5:
-                score += 0.25
-                signals.append(f"positive business case ROI ({roi:.1f}x)")
-            decomp["roi"] = round(roi, 1)
+        # Prefer the new explicit field; fall back to predicted_value
+        _new = bc.get("revenue_impact_usd_annual")
+        _old = bc.get("predicted_value")
+        revenue_impact = _new if _new not in (None, 0) else _old
+        _horizon = bc.get("time_horizon_years")
+        horizon_years = int(_horizon) if _horizon else 1
+        category = bc.get("revenue_impact_category")
 
-    # Clamp
+    if revenue_impact and revenue_impact > 0:
+        lifetime_impact = float(revenue_impact) * horizon_years
+
+        # Log scale: $100K → ~1.5, $1M → ~2.5, $10M → ~3.5, $100M → ~4.5
+        # Formula: 1.5 + log10(lifetime_impact / 100_000)
+        # Clamped to [1.0, 5.0].
+        anchor = 1.5 + math.log10(max(lifetime_impact, 1) / 100_000)
+        anchor = max(1.0, min(5.0, anchor))
+        score = anchor
+
+        decomp["revenue_impact_usd_annual"] = float(revenue_impact)
+        decomp["time_horizon_years"] = horizon_years
+        decomp["lifetime_impact"] = lifetime_impact
+        decomp["revenue_impact_category"] = category or "unspecified"
+        decomp["anchor_from_revenue"] = round(anchor, 2)
+        decomp["quantified"] = True
+
+        _cat_label = {
+            "new_revenue": "new revenue",
+            "retention": "retention",
+            "cost_savings": "cost savings",
+            "risk_mitigation": "risk mitigation",
+        }.get(category, "revenue impact")
+        signals.append(
+            f"${revenue_impact/1_000_000:.1f}M/year {_cat_label}"
+            f" over {horizon_years}y → ${lifetime_impact/1_000_000:.1f}M lifetime"
+            f" (anchors score at {anchor:.1f})"
+        )
+    else:
+        # No quantified revenue impact — fall back to a mid-scale anchor
+        # and let structural signals move the score. Also mark as unquantified.
+        score = 2.5
+        decomp["quantified"] = False
+        signals.append(
+            "Revenue impact not quantified — score based on structural signals only"
+        )
+
+    # -------------------------------------------------------------------
+    # Structural adjustments (total range: -0.5 to +0.5)
+    # -------------------------------------------------------------------
+    if init_links.empty:
+        # Not linked to any KR — this is a real problem. Strong penalty.
+        signals.append("No KR links — not laddered to strategy (-0.5)")
+        score -= 0.5
+        decomp["linked_krs"] = 0
+    else:
+        linked_kr_ids = init_links["key_result_id"].tolist()
+        decomp["linked_krs"] = len(linked_kr_ids)
+
+        # 1) KR gap severity — how far from target across linked KRs. Small boost
+        #    because urgent KRs matter, but bounded so it doesn't overwhelm the
+        #    revenue anchor.
+        gaps = []
+        for kr_id in linked_kr_ids:
+            kr_row = key_results_df[key_results_df["id"] == kr_id]
+            if kr_row.empty:
+                continue
+            kr = kr_row.iloc[0]
+            progress = _kr_progress(
+                kr.get("start_value"), kr.get("target_value"), kr.get("current_value")
+            )
+            gaps.append(1.0 - progress)
+
+        if gaps:
+            avg_gap = sum(gaps) / len(gaps)
+            gap_boost = avg_gap * 0.3  # up to +0.3
+            score += gap_boost
+            decomp["avg_kr_gap"] = round(avg_gap, 2)
+            if gap_boost > 0.05:
+                signals.append(
+                    f"linked KRs {avg_gap:.0%} gap-to-target (+{gap_boost:.1f})"
+                )
+
+        # 2) Cross-functional — moving another team's KR is amplified impact
+        init_org_id = init.get("org_unit_id")
+        cross_functional = False
+        for kr_id in linked_kr_ids:
+            kr_row = key_results_df[key_results_df["id"] == kr_id]
+            if kr_row.empty:
+                continue
+            kr = kr_row.iloc[0]
+            obj_row = objectives_df[objectives_df["id"] == kr.get("objective_id")]
+            if obj_row.empty:
+                continue
+            obj = obj_row.iloc[0]
+            kr_org_id = obj.get("org_unit_id")
+            if kr_org_id and init_org_id and kr_org_id != init_org_id:
+                cross_functional = True
+                break
+        decomp["cross_functional"] = cross_functional
+        if cross_functional:
+            score += 0.2
+            signals.append("cross-functional (moves another team's KR) (+0.2)")
+
+    # Clamp final score
     score = max(1.0, min(5.0, score))
     decomp["signals"] = signals
     return round(score, 1), decomp
@@ -419,11 +453,13 @@ Respond now."""
 # -----------------------------------------------------------------------------
 st.title("⚖️ Prioritization")
 st.caption(
-    "Impact × Effort scoring for the initiatives in scope. Baseline scores "
-    "come from the app's data — linked KR gaps, business case ROI, effort "
-    "estimate, ambient signals. AI can propose adjustments with reasoning. "
-    "You always own the final scores. Strategic weight is carried by the OKR "
-    "structure above; this page sequences among initiatives that already ladder up."
+    "Impact × Effort scoring anchored on the business case. **Impact** is "
+    "primarily annualized revenue impact (new sales, retention, cost savings, "
+    "or risk mitigation) over its time horizon, log-scaled and adjusted for "
+    "KR gap severity and cross-functional reach. **Effort** reads from the "
+    "T-shirt estimate, delivery %, milestone status, and ambient signal load. "
+    "AI can propose adjustments; you always own the final scores. Strategic "
+    "weight is carried by the OKR structure above."
 )
 
 try:
@@ -555,7 +591,7 @@ with ai_c1:
             "✨ Suggest with AI",
             use_container_width=True,
             help=(
-                "Ask Claude to review the baseline scores against the initiative "
+                "Ask Claude to review the calculated scores against the initiative "
                 "context and propose adjustments with reasoning. Adjustments are "
                 "capped at ±1.0; the AI is prompted to be conservative."
             ),
@@ -568,7 +604,7 @@ with ai_c1:
                 st.rerun()
             else:
                 st.warning(
-                    "AI didn't return valid proposals. Baselines still shown."
+                    "AI didn't return valid proposals. Calculated scores still shown."
                 )
     else:
         st.caption("AI unavailable")
@@ -801,7 +837,7 @@ for quad_key, quad_label, quad_color, quad_desc in QUADRANT_ORDER:
         elif row["score_source"] == "user":
             source_badge = "👤 You adjusted"
         else:
-            source_badge = "📊 Baseline"
+            source_badge = "📊 Calculated"
 
         ratio = row["display_impact"] / max(row["display_effort"], 0.5)
         global_rank = global_rank_by_id[row["id"]]
@@ -900,7 +936,7 @@ for quad_key, quad_label, quad_color, quad_desc in QUADRANT_ORDER:
 
             # Reset override
             if row["score_source"] == "user":
-                if st.button("↺ Reset to baseline/AI", key=f"reset_{row['id']}"):
+                if st.button("↺ Reset to calculated/AI score", key=f"reset_{row['id']}"):
                     overrides = st.session_state.get(user_overrides_key, {})
                     if row["id"] in overrides:
                         del overrides[row["id"]]
@@ -913,13 +949,12 @@ for quad_key, quad_label, quad_color, quad_desc in QUADRANT_ORDER:
 # -----------------------------------------------------------------------------
 st.divider()
 st.caption(
-    "**Note on the framework choice:** Impact × Effort keeps the scoring "
-    "surface honest — the app can populate both axes from what already "
-    "exists (linked KR gaps, effort estimate, ambient signals) rather than "
-    "asking you to input scores from a blank sheet. RICE-style scoring adds "
-    "Reach and Confidence, but at this app's grain those are largely captured "
-    "by the KR linkage (Reach = which KR it moves) and the AI proposal "
-    "(Confidence = how much the signals corroborate the estimates). The "
-    "strategic layer — deciding what's worth working on at all — is carried "
-    "by the OKR structure above this page."
+    "**Note on the framework choice:** Impact anchors on annualized revenue "
+    "impact × time horizon — the only apples-to-apples signal across "
+    "initiatives with different underlying units. The four categories "
+    "(new revenue / retention / cost savings / risk mitigation) all "
+    "normalize into that single dollar figure. Structural adjustments "
+    "(KR gap severity, cross-functional reach) shift the anchor by ±0.5 "
+    "total. Initiatives without a quantified revenue impact score from "
+    "structural signals only and are labeled honestly."
 )
