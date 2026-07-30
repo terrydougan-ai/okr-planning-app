@@ -81,22 +81,33 @@ sb = get_supabase()
 # -----------------------------------------------------------------------------
 # Data loading
 # -----------------------------------------------------------------------------
-def _try_load(table_name: str) -> pd.DataFrame:
-    """Load a table; return empty DataFrame if the query fails."""
+def _try_load(table_name: str, required: bool = False) -> pd.DataFrame:
+    """Load a table from Supabase.
+
+    - If required=True, surfaces the exception to the caller (via st.error).
+    - If required=False, returns empty DataFrame on failure (used for
+      optional tables like the ambient signals).
+    """
     try:
-        return pd.DataFrame(sb.table(table_name).select("*").execute().data)
-    except Exception:
+        result = sb.table(table_name).select("*").execute()
+        return pd.DataFrame(result.data)
+    except Exception as e:
+        if required:
+            st.error(f"Failed to load `{table_name}` from Supabase: {e}")
+            raise
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=60)
 def load_all():
     return {
-        "initiatives": _try_load("initiative"),
-        "links": _try_load("initiative_key_result"),
-        "key_results": _try_load("key_result"),
-        "objectives": _try_load("objective"),
-        "org_units": _try_load("org_unit"),
+        # Required tables — bail loudly if these can't load
+        "initiatives": _try_load("initiative", required=True),
+        "links": _try_load("initiative_key_result", required=True),
+        "key_results": _try_load("key_result", required=True),
+        "objectives": _try_load("objective", required=True),
+        "org_units": _try_load("org_unit", required=True),
+        # Optional tables — degrade gracefully
         "business_cases": _try_load("business_case"),
         "engineering_activity": _try_load("engineering_activity"),
         "team_message": _try_load("team_message"),
@@ -431,23 +442,65 @@ engineering_activity = data["engineering_activity"]
 team_message = data["team_message"]
 calendar_event = data["calendar_event"]
 
+# ---- Temporary diagnostic panel (remove after issue is confirmed fixed) ----
+# Shows what actually loaded so we can spot data disconnects.
+with st.expander("🔍 Data load diagnostic", expanded=initiatives.empty):
+    st.markdown(f"""
+    - **initiatives**: {len(initiatives)} rows
+    - **links (initiative_key_result)**: {len(links)} rows
+    - **key_results**: {len(key_results)} rows
+    - **objectives**: {len(objectives)} rows
+    - **org_units**: {len(org_units)} rows
+    - **business_cases**: {len(business_cases)} rows
+    - **engineering_activity**: {len(engineering_activity)} rows
+    - **team_message**: {len(team_message)} rows
+    - **calendar_event**: {len(calendar_event)} rows
+    """)
+    if not initiatives.empty:
+        _statuses = (
+            initiatives["status"].fillna("(null)").value_counts().to_dict()
+        )
+        st.markdown(f"**Initiative statuses**: `{_statuses}`")
+        st.markdown(f"**Initiative columns**: `{list(initiatives.columns)}`")
+    if initiatives.empty:
+        st.warning(
+            "Zero initiatives loaded — this is why the page shows 'No initiatives to prioritize'. "
+            "Check the browser network tab for the Supabase request, or try "
+            "🔄 Refresh in the sidebar to clear the cache."
+        )
+
 if initiatives.empty:
-    st.info("No initiatives to prioritize.")
+    st.info("No initiatives in the database at all. Add some via Create Initiative or seed the data.")
     st.stop()
 
 # -----------------------------------------------------------------------------
 # Filters
 # -----------------------------------------------------------------------------
-# Filter out done/killed by default — prioritization is about live work
-default_statuses = ["proposed", "active"]
+# Derive available status values from the data itself so we don't assume a
+# fixed set. Any status the app knows about should be selectable.
+available_statuses = sorted([
+    s for s in initiatives["status"].dropna().unique().tolist() if s
+])
+
+# Sensible defaults: exclude done/killed if they exist; otherwise include
+# everything so the page isn't empty on first load.
+default_statuses = [
+    s for s in available_statuses if s not in ("done", "killed")
+]
+if not default_statuses:
+    default_statuses = available_statuses  # fall back to all
 
 fc1, fc2 = st.columns([2, 3])
 with fc1:
-    status_filter = st.multiselect(
-        "Include initiatives with status",
-        options=["proposed", "active", "done", "killed"],
-        default=default_statuses,
-    )
+    if available_statuses:
+        status_filter = st.multiselect(
+            "Include initiatives with status",
+            options=available_statuses,
+            default=default_statuses,
+        )
+    else:
+        st.caption("No status values on initiatives — showing all.")
+        status_filter = []
 
 with fc2:
     org_options = ["All teams"] + (
@@ -456,8 +509,12 @@ with fc2:
     )
     org_filter = st.selectbox("Filter by owning team", options=org_options, index=0)
 
-# Apply filters
-in_scope = initiatives[initiatives["status"].isin(status_filter)].copy()
+# Apply filters. If no status filter is set, include everything.
+if status_filter:
+    in_scope = initiatives[initiatives["status"].isin(status_filter)].copy()
+else:
+    in_scope = initiatives.copy()
+
 if org_filter != "All teams" and not org_units.empty:
     org_id_map = org_units.set_index("name")["id"].to_dict()
     filter_org_id = org_id_map.get(org_filter)
@@ -465,7 +522,17 @@ if org_filter != "All teams" and not org_units.empty:
         in_scope = in_scope[in_scope["org_unit_id"] == filter_org_id]
 
 if in_scope.empty:
-    st.info("No initiatives match the current filters.")
+    _status_note = ""
+    if status_filter and available_statuses:
+        excluded = [s for s in available_statuses if s not in status_filter]
+        if excluded:
+            _status_note = (
+                f" (statuses in data but not selected: {', '.join(excluded)})"
+            )
+    st.info(
+        f"No initiatives match the current filters{_status_note}. "
+        "Adjust the filters above to include more."
+    )
     st.stop()
 
 # -----------------------------------------------------------------------------
