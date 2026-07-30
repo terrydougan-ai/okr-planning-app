@@ -449,6 +449,139 @@ Respond now."""
 
 
 # -----------------------------------------------------------------------------
+# AI page-level summary — a chief-of-staff-quality read on the whole portfolio
+# -----------------------------------------------------------------------------
+def ai_summarize_prioritization(summary_context: dict) -> str:
+    """Ask Claude Sonnet to synthesize the whole prioritization page into a
+    short exec brief: portfolio shape, standouts, data quality gaps, suspicious
+    signals, human override patterns.
+
+    Returns the summary text, or empty string on failure.
+    """
+    client = _get_claude_client()
+    if client is None:
+        return ""
+
+    # Format the context for the prompt
+    quadrants = summary_context.get("quadrant_counts", {})
+    quadrant_lines = [
+        f"  - Quick wins: {quadrants.get('quick_wins', 0)}",
+        f"  - Big bets: {quadrants.get('big_bets', 0)}",
+        f"  - Fill-ins: {quadrants.get('fill_ins', 0)}",
+        f"  - Reconsider: {quadrants.get('reconsider', 0)}",
+    ]
+
+    top_lines = []
+    for r in summary_context.get("top_ranked", []):
+        top_lines.append(
+            f"  - {r['title']} ({r['owning_team']}): "
+            f"Impact {r['impact']:.1f} / Effort {r['effort']:.1f}, "
+            f"revenue ${r['revenue']/1_000_000:.1f}M/yr × {r['horizon']}y "
+            f"({r['category']})"
+        )
+
+    bottom_lines = []
+    for r in summary_context.get("bottom_ranked", []):
+        bottom_lines.append(
+            f"  - {r['title']} ({r['owning_team']}): "
+            f"Impact {r['impact']:.1f} / Effort {r['effort']:.1f}"
+        )
+
+    quality_lines = []
+    dq = summary_context.get("data_quality", {})
+    if dq.get("no_kr_link"):
+        quality_lines.append(
+            f"  - {len(dq['no_kr_link'])} initiative(s) without KR links: "
+            f"{', '.join(dq['no_kr_link'][:4])}"
+        )
+    if dq.get("no_business_case"):
+        quality_lines.append(
+            f"  - {len(dq['no_business_case'])} initiative(s) without a business case: "
+            f"{', '.join(dq['no_business_case'][:4])}"
+        )
+    if dq.get("unquantified_impact"):
+        quality_lines.append(
+            f"  - {len(dq['unquantified_impact'])} initiative(s) with unquantified revenue impact: "
+            f"{', '.join(dq['unquantified_impact'][:4])}"
+        )
+    if dq.get("no_effort_size"):
+        quality_lines.append(
+            f"  - {len(dq['no_effort_size'])} initiative(s) with no effort estimate: "
+            f"{', '.join(dq['no_effort_size'][:4])}"
+        )
+
+    suspicious_lines = []
+    for s in summary_context.get("suspicious", []):
+        suspicious_lines.append(f"  - {s}")
+
+    override_lines = []
+    for o in summary_context.get("overrides", []):
+        override_lines.append(f"  - {o}")
+
+    prompt = f"""You are a chief of staff writing a short exec brief on a portfolio prioritization page. A VP will read this to understand the shape of the portfolio and what warrants attention. You are NOT restating the ranked list; you are interpreting it.
+
+PORTFOLIO CONTEXT
+
+Total in-scope initiatives: {summary_context.get('total', 0)}
+
+Quadrant distribution:
+{chr(10).join(quadrant_lines)}
+
+Top 3 by Impact/Effort ratio:
+{chr(10).join(top_lines) if top_lines else '  (none)'}
+
+Bottom 3 by Impact/Effort ratio:
+{chr(10).join(bottom_lines) if bottom_lines else '  (none)'}
+
+Data quality gaps:
+{chr(10).join(quality_lines) if quality_lines else '  (none — data is clean)'}
+
+Suspicious signals (initiative-level flags worth naming):
+{chr(10).join(suspicious_lines) if suspicious_lines else '  (none)'}
+
+Human override patterns:
+{chr(10).join(override_lines) if override_lines else '  (no overrides in this view)'}
+
+TASK
+
+Write a 4-6 sentence brief. Cover in this order:
+
+1. **Portfolio shape** — is it healthy or skewed? Name the shape in one sentence (e.g., "Portfolio skews toward Big Bets with limited Quick Win coverage" or "Balanced portfolio with meaningful spread across quadrants").
+
+2. **What's worth noting at the top or bottom** — name specific initiatives, don't say "some initiatives." If the top-ranked bet is particularly strong or the bottom-ranked one raises questions, say why.
+
+3. **Data quality concerns** — if there are meaningful gaps (unlinked initiatives, missing business cases, unquantified impact), flag them specifically. If not, do not manufacture concern.
+
+4. **Suspicious signals or override patterns** — if any specific initiative is behaving strangely (rated Quick Win but with troubling ambient signals; heavy human override), name it. If not, skip.
+
+WRITING PRINCIPLES
+
+- Reference specific initiatives by name, not "one initiative" or "some teams."
+- If the portfolio is genuinely healthy and data is clean, say so plainly. Do NOT invent drama.
+- Do not restate the ranked list.
+- Do not comment on the framework choice or the app itself.
+- Prose only. No bullets, no headers.
+- Under 130 words.
+
+Write the brief now."""
+
+    try:
+        response = client.messages.create(
+            model=MODEL_SONNET,
+            max_tokens=500,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                raw += block.text
+        return raw.strip()
+    except Exception as e:
+        print(f"[AI] ai_summarize_prioritization failed: {e}")
+        return ""
+
+
+# -----------------------------------------------------------------------------
 # UI
 # -----------------------------------------------------------------------------
 st.title("⚖️ Prioritization")
@@ -646,6 +779,170 @@ for row in scored_rows:
         row["display_effort"] = row["baseline_effort"]
         row["score_source"] = "calculated"
 
+
+# -----------------------------------------------------------------------------
+# Quadrant assignment (used by summary, matrix, and ranked list)
+# -----------------------------------------------------------------------------
+def _quadrant_of(row) -> str:
+    high_impact = row["display_impact"] >= 3.0
+    high_effort = row["display_effort"] >= 3.0
+    if high_impact and not high_effort:
+        return "quick_wins"
+    if high_impact and high_effort:
+        return "big_bets"
+    if not high_impact and not high_effort:
+        return "fill_ins"
+    return "reconsider"
+
+
+for row in scored_rows:
+    row["_quadrant"] = _quadrant_of(row)
+
+
+# -----------------------------------------------------------------------------
+# AI page-level summary — chief-of-staff read on the whole portfolio
+# -----------------------------------------------------------------------------
+def _build_summary_context(rows):
+    """Assemble the compact context passed to the AI summary prompt."""
+    # Rank all rows by ratio
+    ranked = sorted(rows, key=lambda r: -(r["display_impact"] / max(r["display_effort"], 0.5)))
+
+    quadrant_counts = {"quick_wins": 0, "big_bets": 0, "fill_ins": 0, "reconsider": 0}
+    for r in rows:
+        quadrant_counts[r["_quadrant"]] = quadrant_counts.get(r["_quadrant"], 0) + 1
+
+    def _summarize_row(r):
+        return {
+            "title": r["title"],
+            "owning_team": r["owning_team"],
+            "impact": r["display_impact"],
+            "effort": r["display_effort"],
+            "revenue": r["impact_decomp"].get("revenue_impact_usd_annual") or 0,
+            "horizon": r["impact_decomp"].get("time_horizon_years") or 1,
+            "category": r["impact_decomp"].get("revenue_impact_category") or "unspecified",
+        }
+
+    top_ranked = [_summarize_row(r) for r in ranked[:3]]
+    bottom_ranked = [_summarize_row(r) for r in ranked[-3:]] if len(ranked) > 3 else []
+
+    # Data quality gaps
+    data_quality = {
+        "no_kr_link": [r["title"] for r in rows if r["impact_decomp"].get("linked_krs", 0) == 0],
+        "no_business_case": [
+            r["title"] for r in rows
+            if not r["impact_decomp"].get("quantified") and
+               r["impact_decomp"].get("linked_krs", 0) > 0
+        ],
+        "unquantified_impact": [
+            r["title"] for r in rows if not r["impact_decomp"].get("quantified")
+        ],
+        "no_effort_size": [
+            r["title"] for r in rows
+            if r["effort_decomp"].get("t_shirt_size") in ("unspecified", "", None)
+        ],
+    }
+    # Deduplicate: no_business_case is a subset of unquantified_impact
+    _bc_set = set(data_quality["no_business_case"])
+    data_quality["unquantified_impact"] = [
+        t for t in data_quality["unquantified_impact"] if t not in _bc_set
+    ]
+
+    # Suspicious signals — initiative-level flags worth naming
+    suspicious = []
+    for r in rows:
+        # Quick Win with troubling ambient signals
+        if r["_quadrant"] == "quick_wins":
+            signal_load = r["effort_decomp"].get("signal_load", 0)
+            if signal_load >= 3:
+                suspicious.append(
+                    f"{r['title']} is rated Quick Win but has {signal_load} concerning ambient signals"
+                )
+        # Big Bet with blocked or at-risk milestone
+        if r["_quadrant"] == "big_bets":
+            ms = r["effort_decomp"].get("milestone_status")
+            if ms in ("blocked", "at_risk"):
+                suspicious.append(
+                    f"{r['title']} is a Big Bet with milestone status '{ms}'"
+                )
+        # Cross-functional initiative at risk (touches another team's KR)
+        if r["impact_decomp"].get("cross_functional") and r["effort_decomp"].get("milestone_status") in ("blocked", "at_risk"):
+            suspicious.append(
+                f"{r['title']} moves another team's KR and its own milestone is at risk"
+            )
+
+    # Human override patterns
+    overrides = []
+    for r in rows:
+        if r["score_source"] == "user":
+            _prev_i = r.get("prev_impact")
+            _prev_e = r.get("prev_effort")
+            _delta_i = r["display_impact"] - _prev_i if _prev_i is not None else 0
+            _delta_e = r["display_effort"] - _prev_e if _prev_e is not None else 0
+            _reason = r.get("override_reason") or "no reason given"
+            if abs(_delta_i) >= 1.0 or abs(_delta_e) >= 1.0:
+                overrides.append(
+                    f"{r['title']}: manually adjusted "
+                    f"(impact {_delta_i:+.1f}, effort {_delta_e:+.1f}) — {_reason}"
+                )
+
+    return {
+        "total": len(rows),
+        "quadrant_counts": quadrant_counts,
+        "top_ranked": top_ranked,
+        "bottom_ranked": bottom_ranked,
+        "data_quality": data_quality,
+        "suspicious": suspicious,
+        "overrides": overrides,
+    }
+
+
+# Render the summary panel
+with st.container(border=True):
+    _summary_col, _btn_col = st.columns([6, 1])
+    with _summary_col:
+        st.markdown(
+            "<div style='font-weight:600;font-size:1em;color:#374151'>"
+            "✨ AI-generated summary</div>",
+            unsafe_allow_html=True,
+        )
+    with _btn_col:
+        _refresh_summary = st.button(
+            "🔄 Refresh",
+            key="refresh_prio_summary",
+            use_container_width=True,
+            help="Regenerate the summary against the current state of the page.",
+        )
+
+    _summary_key = f"prio_summary_{org_filter}_{','.join(sorted(status_filter))}"
+    # Include a signature of what's user-overridden so refreshing after an
+    # override picks up the change
+    _override_sig = str(sorted(user_overrides.keys()))
+    _sig_key = f"{_summary_key}__sig"
+
+    if _refresh_summary or _summary_key not in st.session_state or st.session_state.get(_sig_key) != _override_sig:
+        if is_ai_enabled():
+            with st.spinner("Summarizing portfolio..."):
+                _context = _build_summary_context(scored_rows)
+                _summary = ai_summarize_prioritization(_context)
+            if _summary:
+                st.session_state[_summary_key] = _summary
+                st.session_state[_sig_key] = _override_sig
+            else:
+                st.session_state[_summary_key] = (
+                    "_Summary generation unavailable._"
+                )
+        else:
+            st.session_state[_summary_key] = (
+                "_AI is not enabled in this environment._"
+            )
+
+    st.markdown(st.session_state.get(_summary_key, ""))
+    st.caption(
+        "_Generated by Claude Sonnet from the same data shown below. "
+        "Interpretation, not restatement._"
+    )
+
+
 # -----------------------------------------------------------------------------
 # Matrix visualization — 2x2 quadrant chart
 # -----------------------------------------------------------------------------
@@ -779,20 +1076,7 @@ st.caption(
 
 
 # Assign each row to a quadrant based on 3.0 midpoint split
-def _quadrant_of(row) -> str:
-    high_impact = row["display_impact"] >= 3.0
-    high_effort = row["display_effort"] >= 3.0
-    if high_impact and not high_effort:
-        return "quick_wins"
-    if high_impact and high_effort:
-        return "big_bets"
-    if not high_impact and not high_effort:
-        return "fill_ins"
-    return "reconsider"
-
-
-for row in scored_rows:
-    row["_quadrant"] = _quadrant_of(row)
+# (Already computed above in the summary-context section.)
 
 # Quadrant display order and metadata
 QUADRANT_ORDER = [
