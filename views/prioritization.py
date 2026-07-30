@@ -618,7 +618,7 @@ with ai_c2:
         )
 
 # -----------------------------------------------------------------------------
-# Determine displayed scores: user-adjusted > AI-proposed > baseline
+# Determine displayed scores: user-adjusted > AI-proposed > calculated
 # -----------------------------------------------------------------------------
 user_overrides_key = f"prioritization_user_overrides_{org_filter}_{','.join(sorted(status_filter))}"
 user_overrides = st.session_state.get(user_overrides_key, {})
@@ -627,9 +627,15 @@ for row in scored_rows:
     iid = row["id"]
     # Effective impact
     if iid in user_overrides:
-        row["display_impact"] = user_overrides[iid].get("impact", row["baseline_impact"])
-        row["display_effort"] = user_overrides[iid].get("effort", row["baseline_effort"])
+        _override = user_overrides[iid]
+        row["display_impact"] = _override.get("impact", row["baseline_impact"])
+        row["display_effort"] = _override.get("effort", row["baseline_effort"])
         row["score_source"] = "user"
+        # Preserve what was there before the override (calculated or AI)
+        row["prev_impact"] = _override.get("prev_impact")
+        row["prev_effort"] = _override.get("prev_effort")
+        row["prev_source"] = _override.get("prev_source", "calculated")
+        row["override_reason"] = _override.get("reason", "")
     elif iid in ai_proposals:
         row["display_impact"] = ai_proposals[iid]["impact"]
         row["display_effort"] = ai_proposals[iid]["effort"]
@@ -638,7 +644,7 @@ for row in scored_rows:
     else:
         row["display_impact"] = row["baseline_impact"]
         row["display_effort"] = row["baseline_effort"]
-        row["score_source"] = "baseline"
+        row["score_source"] = "calculated"
 
 # -----------------------------------------------------------------------------
 # Matrix visualization — 2x2 quadrant chart
@@ -842,9 +848,17 @@ for quad_key, quad_label, quad_color, quad_desc in QUADRANT_ORDER:
         ratio = row["display_impact"] / max(row["display_effort"], 0.5)
         global_rank = global_rank_by_id[row["id"]]
 
+        # Build the score display — annotate with "was X" when user overrode
+        if row["score_source"] == "user" and row.get("prev_impact") is not None:
+            impact_display = f"Impact {row['display_impact']:.1f} (was {row['prev_impact']:.1f})"
+            effort_display = f"Effort {row['display_effort']:.1f} (was {row['prev_effort']:.1f})"
+        else:
+            impact_display = f"Impact {row['display_impact']:.1f}"
+            effort_display = f"Effort {row['display_effort']:.1f}"
+
         header = (
             f"**#{global_rank}. {row['title']}**"
-            f"  ·  Impact {row['display_impact']:.1f} / Effort {row['display_effort']:.1f}"
+            f"  ·  {impact_display} / {effort_display}"
             f"  ·  Ratio {ratio:.2f}"
             f"  ·  {source_badge}"
         )
@@ -876,8 +890,23 @@ for quad_key, quad_label, quad_color, quad_desc in QUADRANT_ORDER:
                     # gracefully — link is a nice-to-have, not core to the page.
                     pass
 
-            # AI reasoning (if present)
-            if row.get("ai_reasoning"):
+            # Override history callout — visible when user has overridden
+            if row["score_source"] == "user" and row.get("prev_impact") is not None:
+                _prev_source_label = {
+                    "calculated": "the calculated score",
+                    "ai": "the AI-adjusted score",
+                }.get(row.get("prev_source", "calculated"), "the prior score")
+                _override_msg = (
+                    f"**👤 Manually overridden.** Adjusted from "
+                    f"Impact {row['prev_impact']:.1f} / Effort {row['prev_effort']:.1f} "
+                    f"({_prev_source_label})."
+                )
+                if row.get("override_reason"):
+                    _override_msg += f"  \n**Reason:** _{row['override_reason']}_"
+                st.warning(_override_msg)
+
+            # AI reasoning (if present and not overridden)
+            if row.get("ai_reasoning") and row["score_source"] == "ai":
                 st.info(f"**✨ AI reasoning:** {row['ai_reasoning']}")
 
             # Score decomposition
@@ -904,9 +933,16 @@ for quad_key, quad_label, quad_color, quad_desc in QUADRANT_ORDER:
 
             st.markdown("---")
 
-            # Manual override sliders
+            # -----------------------------------------------------------------
+            # Manual override section
+            # -----------------------------------------------------------------
             st.markdown("**Adjust scores manually**")
-            sc1, sc2, sc3 = st.columns([2, 2, 1])
+            st.caption(
+                "Move the sliders and add a short reason so someone reading "
+                "the update knows what context you had that the app didn't."
+            )
+
+            sc1, sc2 = st.columns(2)
             with sc1:
                 new_impact = st.slider(
                     "Impact",
@@ -923,25 +959,89 @@ for quad_key, quad_label, quad_color, quad_desc in QUADRANT_ORDER:
                     step=0.5,
                     key=f"effort_slider_{row['id']}",
                 )
-            with sc3:
-                st.markdown("&nbsp;", unsafe_allow_html=True)
-                if st.button("Save", key=f"save_{row['id']}", use_container_width=True):
+
+            new_reason = st.text_input(
+                "Reason for the override",
+                value=row.get("override_reason", ""),
+                placeholder=(
+                    "e.g., \"revenue impact is soft on paper but this KR is "
+                    "strategic to the exec team\" or \"team just picked up "
+                    "additional dependency work\""
+                ),
+                key=f"reason_input_{row['id']}",
+            )
+
+            btn1, btn2, btn3 = st.columns(3)
+            with btn1:
+                if st.button(
+                    "💾 Save override",
+                    key=f"save_{row['id']}",
+                    use_container_width=True,
+                    type="primary",
+                    disabled=(new_impact == row["display_impact"]
+                              and new_effort == row["display_effort"]
+                              and new_reason == row.get("override_reason", "")),
+                ):
                     if user_overrides_key not in st.session_state:
                         st.session_state[user_overrides_key] = {}
+                    # Capture what we're overriding *from* — either the
+                    # calculated score or the AI-adjusted one, whichever
+                    # was showing before this override.
+                    if row["score_source"] == "user":
+                        # Already overridden — keep the prior prev_* values
+                        _prev_impact = row.get("prev_impact")
+                        _prev_effort = row.get("prev_effort")
+                        _prev_source = row.get("prev_source", "calculated")
+                    elif row["score_source"] == "ai":
+                        _prev_impact = row["display_impact"]
+                        _prev_effort = row["display_effort"]
+                        _prev_source = "ai"
+                    else:
+                        _prev_impact = row["baseline_impact"]
+                        _prev_effort = row["baseline_effort"]
+                        _prev_source = "calculated"
                     st.session_state[user_overrides_key][row["id"]] = {
                         "impact": new_impact,
                         "effort": new_effort,
+                        "prev_impact": _prev_impact,
+                        "prev_effort": _prev_effort,
+                        "prev_source": _prev_source,
+                        "reason": new_reason.strip(),
                     }
                     st.rerun()
 
-            # Reset override
-            if row["score_source"] == "user":
-                if st.button("↺ Reset to calculated/AI score", key=f"reset_{row['id']}"):
+            with btn2:
+                # Rescore button — clears the user override and any cached AI
+                # proposal for this specific initiative, forcing a fresh
+                # calculation and (if the user chooses) fresh AI review.
+                if st.button(
+                    "🔄 Rescore from current data",
+                    key=f"rescore_{row['id']}",
+                    use_container_width=True,
+                    help=(
+                        "Discard any manual override and use the freshly "
+                        "calculated score. Use this after you've updated the "
+                        "initiative's business case, KR links, or effort estimate."
+                    ),
+                ):
+                    # Clear user override for this initiative
                     overrides = st.session_state.get(user_overrides_key, {})
                     if row["id"] in overrides:
                         del overrides[row["id"]]
                         st.session_state[user_overrides_key] = overrides
-                        st.rerun()
+                    # Clear AI proposal for this initiative so it's not
+                    # reapplied on rerun
+                    _ai_props = st.session_state.get(_ai_key, {})
+                    if row["id"] in _ai_props:
+                        del _ai_props[row["id"]]
+                        st.session_state[_ai_key] = _ai_props
+                    # Bust the load_all cache too so any DB-side changes
+                    # to the initiative flow through
+                    st.cache_data.clear()
+                    st.rerun()
+
+            with btn3:
+                st.markdown("&nbsp;")  # spacer
 
 
 # -----------------------------------------------------------------------------
