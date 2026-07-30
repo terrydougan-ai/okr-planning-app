@@ -89,30 +89,17 @@ def _try_load(table_name: str, required: bool = False) -> pd.DataFrame:
       optional tables like the ambient signals).
     """
     try:
-        import time as _t
-        _start = _t.time()
         result = sb.table(table_name).select("*").execute()
-        _elapsed = _t.time() - _start
-        # Record timing in session state so we can diagnose slow queries
-        _timings = st.session_state.get("_prio_load_timings", {})
-        _timings[table_name] = {"seconds": round(_elapsed, 2), "rows": len(result.data)}
-        st.session_state["_prio_load_timings"] = _timings
         return pd.DataFrame(result.data)
     except Exception as e:
-        _timings = st.session_state.get("_prio_load_timings", {})
-        _timings[table_name] = {"error": str(e)}
-        st.session_state["_prio_load_timings"] = _timings
         if required:
             st.error(f"Failed to load `{table_name}` from Supabase: {e}")
             raise
         return pd.DataFrame()
 
 
-# Note: we do NOT wrap load_all with @st.cache_data on this page while
-# diagnosing. Caching hides which specific query stalls on the first run.
+@st.cache_data(ttl=60)
 def load_all():
-    # Reset per-load timing state
-    st.session_state["_prio_load_timings"] = {}
     return {
         # Required tables — bail loudly if these can't load
         "initiatives": _try_load("initiative", required=True),
@@ -120,8 +107,7 @@ def load_all():
         "key_results": _try_load("key_result", required=True),
         "objectives": _try_load("objective", required=True),
         "org_units": _try_load("org_unit", required=True),
-        # Optional tables — degrade gracefully. If any of these are slow,
-        # the diagnostic panel will show it.
+        # Optional tables — degrade gracefully
         "business_cases": _try_load("business_case"),
         "engineering_activity": _try_load("engineering_activity"),
         "team_message": _try_load("team_message"),
@@ -456,51 +442,6 @@ engineering_activity = data["engineering_activity"]
 team_message = data["team_message"]
 calendar_event = data["calendar_event"]
 
-# ---- Temporary diagnostic panel (remove after issue is confirmed fixed) ----
-# Shows what actually loaded, per-table timings, and status distribution so we
-# can pinpoint slow queries or empty results.
-with st.expander("🔍 Data load diagnostic", expanded=initiatives.empty):
-    _timings = st.session_state.get("_prio_load_timings", {})
-    if _timings:
-        st.markdown("**Per-table load timings:**")
-        _timing_rows = []
-        for table_name, info in _timings.items():
-            if "error" in info:
-                _timing_rows.append(f"- **{table_name}**: ERROR — {info['error']}")
-            else:
-                _slow = " ⚠ slow" if info["seconds"] > 2.0 else ""
-                _timing_rows.append(
-                    f"- **{table_name}**: {info['rows']} rows in "
-                    f"{info['seconds']}s{_slow}"
-                )
-        st.markdown("\n".join(_timing_rows))
-    else:
-        st.markdown("_No timing data recorded._")
-
-    st.markdown("---")
-    st.markdown(f"""
-    **Row counts:**
-    - initiatives: {len(initiatives)}
-    - links: {len(links)}
-    - key_results: {len(key_results)}
-    - objectives: {len(objectives)}
-    - org_units: {len(org_units)}
-    - business_cases: {len(business_cases)}
-    - engineering_activity: {len(engineering_activity)}
-    - team_message: {len(team_message)}
-    - calendar_event: {len(calendar_event)}
-    """)
-    if not initiatives.empty:
-        _statuses = (
-            initiatives["status"].fillna("(null)").value_counts().to_dict()
-        )
-        st.markdown(f"**Initiative statuses**: `{_statuses}`")
-    if initiatives.empty:
-        st.warning(
-            "Zero initiatives loaded. See timings above — if a specific table "
-            "shows an error or very high seconds, that's the culprit."
-        )
-
 if initiatives.empty:
     st.info("No initiatives in the database at all. Add some via Create Initiative or seed the data.")
     st.stop()
@@ -668,6 +609,21 @@ for row in scored_rows:
 # -----------------------------------------------------------------------------
 st.subheader(f"Impact × Effort matrix — {len(scored_rows)} initiatives")
 
+# Pre-compute the rank so bubble numbers match the ranked list below
+_pre_ranked = sorted(
+    scored_rows,
+    key=lambda r: -(r["display_impact"] / max(r["display_effort"], 0.5)),
+)
+rank_by_id = {r["id"]: idx for idx, r in enumerate(_pre_ranked, start=1)}
+
+# Apply small deterministic jitter so overlapping bubbles don't stack.
+# Deterministic (hash-based) means bubbles don't shuffle on every rerender.
+import hashlib as _hashlib
+def _jitter(iid: str, axis: str) -> float:
+    """Return a small offset in [-0.15, +0.15] deterministic per (id, axis)."""
+    _h = int(_hashlib.md5(f"{iid}_{axis}".encode()).hexdigest()[:8], 16)
+    return ((_h % 1000) / 1000.0 - 0.5) * 0.30
+
 # Build the plotly figure
 fig = go.Figure()
 
@@ -689,15 +645,15 @@ fig.add_shape(
     fillcolor="rgba(239,68,68,0.08)", line=dict(width=0), layer="below",
 )  # Reconsider (high effort, low impact)
 
-# Quadrant labels
-fig.add_annotation(x=2, y=4.75, text="<b>Quick wins</b>", showarrow=False,
-                   font=dict(size=11, color="#059669"))
-fig.add_annotation(x=4, y=4.75, text="<b>Big bets</b>", showarrow=False,
-                   font=dict(size=11, color="#2563EB"))
-fig.add_annotation(x=2, y=1.25, text="<b>Fill-ins</b>", showarrow=False,
-                   font=dict(size=11, color="#6B7280"))
-fig.add_annotation(x=4, y=1.25, text="<b>Reconsider</b>", showarrow=False,
-                   font=dict(size=11, color="#DC2626"))
+# Quadrant labels — moved to the corners so they don't fight for space
+fig.add_annotation(x=1.1, y=4.9, text="<b>Quick wins</b>", showarrow=False,
+                   xanchor="left", font=dict(size=11, color="#059669"))
+fig.add_annotation(x=4.9, y=4.9, text="<b>Big bets</b>", showarrow=False,
+                   xanchor="right", font=dict(size=11, color="#2563EB"))
+fig.add_annotation(x=1.1, y=1.1, text="<b>Fill-ins</b>", showarrow=False,
+                   xanchor="left", font=dict(size=11, color="#6B7280"))
+fig.add_annotation(x=4.9, y=1.1, text="<b>Reconsider</b>", showarrow=False,
+                   xanchor="right", font=dict(size=11, color="#DC2626"))
 
 # Color initiatives by owning team
 team_names = sorted(set(r["owning_team"] for r in scored_rows))
@@ -708,25 +664,34 @@ color_by_team = {name: palette[i % len(palette)] for i, name in enumerate(team_n
 for team in team_names:
     team_rows = [r for r in scored_rows if r["owning_team"] == team]
     fig.add_trace(go.Scatter(
-        x=[r["display_effort"] for r in team_rows],
-        y=[r["display_impact"] for r in team_rows],
+        x=[r["display_effort"] + _jitter(r["id"], "x") for r in team_rows],
+        y=[r["display_impact"] + _jitter(r["id"], "y") for r in team_rows],
         mode="markers+text",
         name=team,
         marker=dict(
-            size=[15 + (r["progress_pct"] / 100 * 12) for r in team_rows],
+            size=[22 + (r["progress_pct"] / 100 * 10) for r in team_rows],
             color=color_by_team[team],
-            opacity=0.75,
+            opacity=0.80,
             line=dict(width=1.5, color="white"),
         ),
-        text=[r["title"][:35] + ("…" if len(r["title"]) > 35 else "") for r in team_rows],
-        textposition="top center",
-        textfont=dict(size=9),
+        # Show rank number on the bubble — matches the ranked list numbering
+        text=[str(rank_by_id[r["id"]]) for r in team_rows],
+        textposition="middle center",
+        textfont=dict(size=11, color="white", family="Arial Black"),
         hovertemplate=(
-            "<b>%{text}</b><br>" +
-            "Impact: %{y}<br>" +
-            "Effort: %{x}<br>" +
+            "<b>#%{text}: " +
+            "%{customdata[0]}</b><br>" +
+            "Impact: %{customdata[1]:.1f}<br>" +
+            "Effort: %{customdata[2]:.1f}<br>" +
+            "Team: %{customdata[3]}<br>" +
+            "Delivery: %{customdata[4]}%" +
             "<extra></extra>"
         ),
+        customdata=[
+            [r["title"], r["display_impact"], r["display_effort"],
+             r["owning_team"], r["progress_pct"]]
+            for r in team_rows
+        ],
     ))
 
 fig.update_layout(
@@ -740,11 +705,11 @@ fig.update_layout(
         tickvals=[1, 2, 3, 4, 5],
         showgrid=True, gridcolor="rgba(0,0,0,0.05)",
     ),
-    height=560,
+    height=640,
     plot_bgcolor="white",
     margin=dict(l=60, r=20, t=20, b=60),
     legend=dict(
-        orientation="h", yanchor="bottom", y=-0.20, xanchor="center", x=0.5,
+        orientation="h", yanchor="bottom", y=-0.16, xanchor="center", x=0.5,
     ),
 )
 # Divider lines through middle
@@ -754,120 +719,175 @@ fig.add_vline(x=3, line=dict(color="#D1D5DB", width=1, dash="dot"))
 st.plotly_chart(fig, use_container_width=True)
 
 st.caption(
-    "Bubble size represents delivery %. Bubble color represents owning team. "
-    "Quadrants are guides, not rules — a 'Reconsider' initiative may be "
-    "strategically necessary; a 'Quick win' may be lower priority than a "
-    "committed roadmap item."
+    "Bubbles are numbered to match the ranked list below. Bubble size represents "
+    "delivery %. Bubble color represents owning team. Hover for full details. "
+    "Small jitter is applied to prevent overlap; quadrants are guides, not rules."
 )
 
 # -----------------------------------------------------------------------------
-# Ranked list — score decomposition + sliders for manual adjustment
+# Ranked list — grouped by quadrant, sorted by ratio within each quadrant
 # -----------------------------------------------------------------------------
 st.subheader("Ranked list")
 st.caption(
-    "Sorted by Impact ÷ Effort ratio — the classic prioritization heuristic. "
-    "Each initiative shows the baseline reasoning; expand to adjust manually."
+    "Grouped by quadrant, then sorted by Impact ÷ Effort ratio within each "
+    "group. Quadrants are guides — a Reconsider initiative may be strategically "
+    "necessary; a Quick win may be lower priority than a committed roadmap item. "
+    "Numbers match the bubbles on the matrix above."
 )
 
-# Sort by impact / effort ratio, descending
-ranked = sorted(
+
+# Assign each row to a quadrant based on 3.0 midpoint split
+def _quadrant_of(row) -> str:
+    high_impact = row["display_impact"] >= 3.0
+    high_effort = row["display_effort"] >= 3.0
+    if high_impact and not high_effort:
+        return "quick_wins"
+    if high_impact and high_effort:
+        return "big_bets"
+    if not high_impact and not high_effort:
+        return "fill_ins"
+    return "reconsider"
+
+
+for row in scored_rows:
+    row["_quadrant"] = _quadrant_of(row)
+
+# Quadrant display order and metadata
+QUADRANT_ORDER = [
+    ("quick_wins", "🟢 Quick wins", "#059669",
+     "High impact, low effort — these should happen."),
+    ("big_bets", "🔵 Big bets", "#2563EB",
+     "High impact, high effort — the strategic conversation."),
+    ("fill_ins", "⚪ Fill-ins", "#6B7280",
+     "Low impact, low effort — cheap to knock out but don't move the needle."),
+    ("reconsider", "🔴 Reconsider", "#DC2626",
+     "Low impact, high effort — worth questioning whether these belong on the roadmap."),
+]
+
+# Also pre-rank the whole list globally so numbers match the bubbles on the matrix
+_global_ranked = sorted(
     scored_rows,
     key=lambda r: -(r["display_impact"] / max(r["display_effort"], 0.5)),
 )
+global_rank_by_id = {r["id"]: idx for idx, r in enumerate(_global_ranked, start=1)}
 
-for idx, row in enumerate(ranked, start=1):
-    # Source badge
-    if row["score_source"] == "ai":
-        source_badge = "✨ AI-adjusted"
-    elif row["score_source"] == "user":
-        source_badge = "👤 You adjusted"
-    else:
-        source_badge = "📊 Baseline"
+for quad_key, quad_label, quad_color, quad_desc in QUADRANT_ORDER:
+    quad_rows = [r for r in scored_rows if r["_quadrant"] == quad_key]
+    if not quad_rows:
+        continue
 
-    ratio = row["display_impact"] / max(row["display_effort"], 0.5)
-
-    header = (
-        f"**{idx}. {row['title']}**"
-        f"  ·  Impact {row['display_impact']:.1f} / Effort {row['display_effort']:.1f}"
-        f"  ·  Ratio {ratio:.2f}"
-        f"  ·  {source_badge}"
+    # Sort within quadrant by ratio (best first)
+    quad_rows_sorted = sorted(
+        quad_rows,
+        key=lambda r: -(r["display_impact"] / max(r["display_effort"], 0.5)),
     )
 
-    with st.expander(header, expanded=False):
-        st.markdown(
-            f"**Team:** {row['owning_team']}  ·  "
-            f"**Status:** {row['status']}  ·  "
-            f"**Milestone:** {row['milestone_status']}  ·  "
-            f"**Delivery:** {row['progress_pct']}%  ·  "
-            f"**T-shirt:** {row['effort_estimate']}"
+    # Quadrant header
+    st.markdown(
+        f"<div style='margin:24px 0 8px;padding:6px 12px;"
+        f"border-left:4px solid {quad_color};background:#F9FAFB;"
+        f"font-size:1.05em;font-weight:600;color:{quad_color}'>"
+        f"{quad_label} <span style='color:#6B7280;font-weight:400;font-size:0.9em'>"
+        f"· {len(quad_rows_sorted)} initiative"
+        f"{'s' if len(quad_rows_sorted) != 1 else ''} · {quad_desc}</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    for row in quad_rows_sorted:
+        # Source badge
+        if row["score_source"] == "ai":
+            source_badge = "✨ AI-adjusted"
+        elif row["score_source"] == "user":
+            source_badge = "👤 You adjusted"
+        else:
+            source_badge = "📊 Baseline"
+
+        ratio = row["display_impact"] / max(row["display_effort"], 0.5)
+        global_rank = global_rank_by_id[row["id"]]
+
+        header = (
+            f"**#{global_rank}. {row['title']}**"
+            f"  ·  Impact {row['display_impact']:.1f} / Effort {row['display_effort']:.1f}"
+            f"  ·  Ratio {ratio:.2f}"
+            f"  ·  {source_badge}"
         )
 
-        # AI reasoning (if present)
-        if row.get("ai_reasoning"):
-            st.info(f"**✨ AI reasoning:** {row['ai_reasoning']}")
-
-        # Score decomposition
-        dc1, dc2 = st.columns(2)
-        with dc1:
-            st.markdown("**Impact signals**")
-            impact_signals = row["impact_decomp"].get("signals", [])
-            if impact_signals:
-                for s in impact_signals:
-                    st.markdown(f"- {s}")
-            else:
-                st.caption("No impact signals detected.")
-            if row["impact_decomp"].get("note"):
-                st.caption(f"_{row['impact_decomp']['note']}_")
-
-        with dc2:
-            st.markdown("**Effort signals**")
-            effort_signals = row["effort_decomp"].get("signals", [])
-            if effort_signals:
-                for s in effort_signals:
-                    st.markdown(f"- {s}")
-            else:
-                st.caption("No effort signals detected.")
-
-        st.markdown("---")
-
-        # Manual override sliders
-        st.markdown("**Adjust scores manually**")
-        sc1, sc2, sc3 = st.columns([2, 2, 1])
-        with sc1:
-            new_impact = st.slider(
-                "Impact",
-                min_value=1.0, max_value=5.0,
-                value=float(row["display_impact"]),
-                step=0.5,
-                key=f"impact_slider_{row['id']}",
+        with st.expander(header, expanded=False):
+            st.markdown(
+                f"**Team:** {row['owning_team']}  ·  "
+                f"**Status:** {row['status']}  ·  "
+                f"**Milestone:** {row['milestone_status']}  ·  "
+                f"**Delivery:** {row['progress_pct']}%  ·  "
+                f"**T-shirt:** {row['effort_estimate']}"
             )
-        with sc2:
-            new_effort = st.slider(
-                "Effort",
-                min_value=1.0, max_value=5.0,
-                value=float(row["display_effort"]),
-                step=0.5,
-                key=f"effort_slider_{row['id']}",
-            )
-        with sc3:
-            st.markdown("&nbsp;", unsafe_allow_html=True)
-            if st.button("Save", key=f"save_{row['id']}", use_container_width=True):
-                if user_overrides_key not in st.session_state:
-                    st.session_state[user_overrides_key] = {}
-                st.session_state[user_overrides_key][row["id"]] = {
-                    "impact": new_impact,
-                    "effort": new_effort,
-                }
-                st.rerun()
 
-        # Reset override
-        if row["score_source"] == "user":
-            if st.button("↺ Reset to baseline/AI", key=f"reset_{row['id']}"):
-                overrides = st.session_state.get(user_overrides_key, {})
-                if row["id"] in overrides:
-                    del overrides[row["id"]]
-                    st.session_state[user_overrides_key] = overrides
+            # AI reasoning (if present)
+            if row.get("ai_reasoning"):
+                st.info(f"**✨ AI reasoning:** {row['ai_reasoning']}")
+
+            # Score decomposition
+            dc1, dc2 = st.columns(2)
+            with dc1:
+                st.markdown("**Impact signals**")
+                impact_signals = row["impact_decomp"].get("signals", [])
+                if impact_signals:
+                    for s in impact_signals:
+                        st.markdown(f"- {s}")
+                else:
+                    st.caption("No impact signals detected.")
+                if row["impact_decomp"].get("note"):
+                    st.caption(f"_{row['impact_decomp']['note']}_")
+
+            with dc2:
+                st.markdown("**Effort signals**")
+                effort_signals = row["effort_decomp"].get("signals", [])
+                if effort_signals:
+                    for s in effort_signals:
+                        st.markdown(f"- {s}")
+                else:
+                    st.caption("No effort signals detected.")
+
+            st.markdown("---")
+
+            # Manual override sliders
+            st.markdown("**Adjust scores manually**")
+            sc1, sc2, sc3 = st.columns([2, 2, 1])
+            with sc1:
+                new_impact = st.slider(
+                    "Impact",
+                    min_value=1.0, max_value=5.0,
+                    value=float(row["display_impact"]),
+                    step=0.5,
+                    key=f"impact_slider_{row['id']}",
+                )
+            with sc2:
+                new_effort = st.slider(
+                    "Effort",
+                    min_value=1.0, max_value=5.0,
+                    value=float(row["display_effort"]),
+                    step=0.5,
+                    key=f"effort_slider_{row['id']}",
+                )
+            with sc3:
+                st.markdown("&nbsp;", unsafe_allow_html=True)
+                if st.button("Save", key=f"save_{row['id']}", use_container_width=True):
+                    if user_overrides_key not in st.session_state:
+                        st.session_state[user_overrides_key] = {}
+                    st.session_state[user_overrides_key][row["id"]] = {
+                        "impact": new_impact,
+                        "effort": new_effort,
+                    }
                     st.rerun()
+
+            # Reset override
+            if row["score_source"] == "user":
+                if st.button("↺ Reset to baseline/AI", key=f"reset_{row['id']}"):
+                    overrides = st.session_state.get(user_overrides_key, {})
+                    if row["id"] in overrides:
+                        del overrides[row["id"]]
+                        st.session_state[user_overrides_key] = overrides
+                        st.rerun()
 
 
 # -----------------------------------------------------------------------------
