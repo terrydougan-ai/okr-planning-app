@@ -47,6 +47,11 @@ plan_quarter = st.Page(
     title="Plan a Quarter",
     icon="✏️",
 )
+prioritization = st.Page(
+    "views/prioritization.py", 
+    title="Prioritization", 
+    icon="⚖️"
+)
 flow = st.Page(
     "views/flow.py",
     title="Planning Flow",
