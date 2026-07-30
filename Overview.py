@@ -116,7 +116,7 @@ create_initiative = st.Page(
 nav = st.navigation(
     {
         "About": [about_page],
-        "Plan": [annual_strategy, plan_quarter, flow],
+        "Plan": [annual_strategy, plan_quarter, prioritization, flow],
         "Check-ins": [checkins, initiative_updates],
         "Executive Review": [hotspots, summary, objectives, initiatives],
         "Administration": [manage_org, create_initiative],
