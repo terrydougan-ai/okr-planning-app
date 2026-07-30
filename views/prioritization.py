@@ -814,13 +814,31 @@ for quad_key, quad_label, quad_color, quad_desc in QUADRANT_ORDER:
         )
 
         with st.expander(header, expanded=False):
-            st.markdown(
-                f"**Team:** {row['owning_team']}  ·  "
-                f"**Status:** {row['status']}  ·  "
-                f"**Milestone:** {row['milestone_status']}  ·  "
-                f"**Delivery:** {row['progress_pct']}%  ·  "
-                f"**T-shirt:** {row['effort_estimate']}"
-            )
+            _meta_col, _link_col = st.columns([4, 1])
+            with _meta_col:
+                st.markdown(
+                    f"**Team:** {row['owning_team']}  ·  "
+                    f"**Status:** {row['status']}  ·  "
+                    f"**Milestone:** {row['milestone_status']}  ·  "
+                    f"**Delivery:** {row['progress_pct']}%  ·  "
+                    f"**T-shirt:** {row['effort_estimate']}"
+                )
+            with _link_col:
+                # Link out to the initiative admin surface so a user can edit
+                # description, KR links, business case, etc. Streamlit's
+                # page_link jumps to the page but not to a specific initiative;
+                # the user selects it there. Small friction, low risk.
+                try:
+                    st.page_link(
+                        "views/create_initiative.py",
+                        label="✏️ Edit",
+                        icon=None,
+                        help="Open Create Initiative page to edit this initiative's details.",
+                    )
+                except Exception:
+                    # If create_initiative.py isn't in that path, degrade
+                    # gracefully — link is a nice-to-have, not core to the page.
+                    pass
 
             # AI reasoning (if present)
             if row.get("ai_reasoning"):
